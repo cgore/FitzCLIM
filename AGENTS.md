@@ -1,10 +1,26 @@
 # AGENTS.md
 
-This repository is FitzCLIM, a Common Lisp implementation of the CLIM II protocols, aimed at SBCL.  The product description is in `README.md`.  Do not restate it in source comments.
+This repository is FitzCLIM, a Common Lisp implementation of the CLIM II protocols and the CLIM 2.2 revisions, aimed at SBCL.  The product description is in `README.md`.  Do not restate it in source comments.
 
-This is a clean-room implementation.  Do not copy source from McCLIM, from Franz CLIM, or from LispWorks CLIM.  The CLIM II specification may be consulted.  Its text is copyrighted; do not paste it into this tree.
+This is a clean-room implementation.  Do not copy source from McCLIM, from Franz CLIM, or from LispWorks CLIM.  The CLIM II specification may be consulted.  Franz's CLIM 2.2 User Guide may be consulted for the 2.2 revisions.  Both texts are copyrighted; do not paste them into this tree.
 
 Code written with the assistance of an LLM is welcome here.  The person who commits it is responsible for it.
+
+## Prose
+
+Follow Strunk and White, *The Elements of Style*.  Use the active voice.  Use definite, concrete words.  Omit needless words.  Put statements in positive form.  Keep related words together.  Two spaces follow a sentence-ending period, as in the other Lisp repositories.
+
+Do not write AI-speak.  Do not clear your throat, stack hedges, or use an inflated verb where a plain one will do.
+
+## Style
+
+Follow Sigma's layout.  Indent two spaces.  In `defpackage`, put `:use` and `:export` on their own lines and list one symbol per line.  Give each function, macro, generic, and class a docstring.  Two spaces follow a sentence-ending period.  Put the `behavior` form immediately after the definition it tests.
+
+Our own predicates end in `?`.  An in-place macro ends in `f`.  The CLIM protocol keeps the names the specification uses: `pointp`, `make-point`, `region-union`, and the rest.
+
+The top-level package designator is `:FitzCLIM`.  Nested names use `/`, in the same shape as limbic.fi.  `:FitzCLIM/geometry` is the geometry protocol, and its files live in `source/geometry/`.  A file that stands as its own component takes the longer name: `source/graphics/color.lisp` is `:FitzCLIM/graphics/color`.  `:FitzCLIM` reexports the protocol.
+
+In the ASDF system, modules follow those directories.  A component's `:depends-on` names the siblings it uses directly, so the graph is a tree or a diamond.  Do not line the files up so that each depends only on the previous file.
 
 ## Shape
 
@@ -22,19 +38,21 @@ McCLIM is LGPL-2.1-or-later.  Its interactive backend is CLX, its native Windows
 
 Franz CLIM and LispWorks CLIM realize gadgets as native controls through the frame manager.  Follow that split.  Their source stays off limits, as does McCLIM's.  No other maintained CLIM runs on SBCL.
 
-There is no CLIM III specification.  Implement CLIM II.  CLIM 2.2 is Franz's user guide, not a second formal specification.
+There is no CLIM III specification.  Implement CLIM II, and implement the CLIM 2.2 revisions.  CLIM 2.2 is not a second formal specification.  The revisions are written down in Franz's CLIM 2.2 User Guide.  The September 2005 edition is version 2.2.2, copyright Franz Inc.  That copyright forbids reproducing the guide.  It does not forbid an independent implementation of the protocols the guide describes.  Write that implementation here.  Allegro-only host features in the guide, such as Motif server paths and the `excl` package, stay out.
 
 ## Scope
 
-Build the CLIM II protocols this toolkit is for: frames, the command loop, presentations, the gadgets in use, one native frame manager, and one 3D pane.  The first frame manager targets Windows.
+The aim is a full implementation of CLIM II and of the CLIM 2.2 revisions.  Build in this order: frames, the command loop, presentations, the gadgets in use, one native frame manager, and one 3D pane.  The first frame manager targets Windows.
 
-Drei, bundled applications, extra backends, and a port of every CLIM II corner come after that core.  Do not begin there.
+Drei, bundled applications, and extra backends come after that core.  Do not begin there.
 
 Keep the 2D graphics protocol as specified.  A design that makes the graphics model a 3D scene graph, or that makes every presentation a native control, is a different toolkit.
 
 ## EDEFB
 
-EDEFB, at `D:\Programming\Lisp\edefb`, is a sister repository (`https://github.com/cgore/edefb.git`).  FitzCLIM is a general toolkit.  Leave Elite Dangerous out of this tree.  Leave the EDEFB tree alone.  EDEFB uses FitzCLIM for its interface.
+FitzCLIM was begun so that EDEFB can have a CLIM.  EDEFB, the Elite Dangerous Electronic Flight Bag, is a sister repository at `D:\Programming\Lisp\edefb` (`https://github.com/cgore/edefb.git`).  EDEFB uses FitzCLIM for its interface.  The toolkit is general, and other programs will use it too.
+
+Leave Elite Dangerous out of this tree.  Leave the EDEFB tree alone.
 
 ## Copyright and license
 
@@ -63,3 +81,9 @@ Write those tests with Sigma's `sigma/behave` package whenever it can express th
 Use Sigma whenever it already provides the utility you need.  Load `:sigma` and use the specific package (`sigma/behave`, `sigma/sequence`, `sigma/string`, `sigma/control`, `sigma/numeric`, `sigma/hash`, and the others).  Call `sigma:use-all-sigma` only in a scratch listener.  Library and application code name the package they use.
 
 Use another Common Lisp library when its license is compatible with the 3-clause BSD license in `LICENSE.md`.  A compatible license lets FitzCLIM depend on the library, or vendor it, while FitzCLIM's own code stays 3-clause BSD.  Permissive licenses meet that test, including BSD, MIT, ISC, the Apache License 2.0, and public-domain dedications.  A copyleft license does not.  Keep that library's copyright and license notice with any code you vendor.
+
+## Documentation
+
+The manual is LaTeX in `documentation/`, in the same shape as the other Lisp repositories.  The book is `fitzclim.latex`.  It inputs `copyright.latex` and `introduction.latex`, and a package chapter `name-package.latex` as each package arrives.  The bibliography is `fitzclim.bib`.  `make` in that directory builds `fitzclim.pdf`.
+
+Write the manual in the prose above.  Do not paste the CLIM II specification, or Franz's CLIM 2.2 User Guide, into it.

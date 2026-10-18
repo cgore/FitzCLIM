@@ -8,13 +8,33 @@ Code written with the assistance of an LLM is welcome here.  The person who comm
 
 ## Shape
 
-The frame manager realizes the standard gadgets as native controls.  On Windows those are Windows controls.  Layout positions them through the sheet protocol.
+The frame manager realizes the standard gadgets as native controls.  On Windows those are Windows controls.  Layout positions them through the sheet protocol.  A native control does not hold CLIM output records.  Its items may still be Lisp objects, and a selection may run a command.
 
 An application pane is drawn by FitzCLIM.  It records output and holds presentations.  A command loop reads commands, from typing or from a gesture on a presentation, and runs them.
 
 A 3D pane is a native OpenGL child window, a sibling of the native controls.  Pointer events at its edge become a ray.  A hit returns a Lisp object and enters the same command and translator machinery as a 2D presentation.
 
-The 2D graphics protocol stays two-dimensional.  Do not fold regions, transforms, clipping, formatted output, or output recording into the scene graph.  The OpenGL pane owns its redraw.  A label in the scene is drawn and picked there.  Do not lay a transparent CLIM sheet over the OpenGL window.
+The 2D graphics protocol stays two-dimensional.  Do not fold regions, transforms, clipping, formatted output, or output recording into the scene graph.  The OpenGL pane owns its redraw.  FitzCLIM may ask that pane to repaint.  The pane must not record its scene as output records.  A label in the scene is drawn and picked there.  Do not lay a transparent CLIM sheet over the OpenGL window.
+
+## Provenance
+
+McCLIM is LGPL-2.1-or-later.  Its interactive backend is CLX, its native Windows backend is abandoned, and it has no OpenGL pane.  The maintainer's working rule is that LLM-written code stays out of the McCLIM tree (Codeberg issue #1497).  FitzCLIM is a separate implementation so this tree can stay 3-clause BSD, so LLM-assisted code can land here, and so native controls and a 3D pane are part of the design.
+
+Franz CLIM and LispWorks CLIM realize gadgets as native controls through the frame manager.  Follow that split.  Their source stays off limits, as does McCLIM's.  No other maintained CLIM runs on SBCL.
+
+There is no CLIM III specification.  Implement CLIM II.  CLIM 2.2 is Franz's user guide, not a second formal specification.
+
+## Scope
+
+Build the CLIM II protocols this toolkit is for: frames, the command loop, presentations, the gadgets in use, one native frame manager, and one 3D pane.  The first frame manager targets Windows.
+
+Drei, bundled applications, extra backends, and a port of every CLIM II corner come after that core.  Do not begin there.
+
+Keep the 2D graphics protocol as specified.  A design that makes the graphics model a 3D scene graph, or that makes every presentation a native control, is a different toolkit.
+
+## EDEFB
+
+EDEFB, at `D:\Programming\Lisp\edefb`, is a sister repository (`https://github.com/cgore/edefb.git`).  FitzCLIM is a general toolkit.  Leave Elite Dangerous out of this tree.  Leave the EDEFB tree alone.  EDEFB has not chosen its interface.
 
 ## Copyright and license
 

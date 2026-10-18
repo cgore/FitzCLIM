@@ -34,7 +34,7 @@ Keep the 2D graphics protocol as specified.  A design that makes the graphics mo
 
 ## EDEFB
 
-EDEFB, at `D:\Programming\Lisp\edefb`, is a sister repository (`https://github.com/cgore/edefb.git`).  FitzCLIM is a general toolkit.  Leave Elite Dangerous out of this tree.  Leave the EDEFB tree alone.  EDEFB has not chosen its interface.
+EDEFB, at `D:\Programming\Lisp\edefb`, is a sister repository (`https://github.com/cgore/edefb.git`).  FitzCLIM is a general toolkit.  Leave Elite Dangerous out of this tree.  Leave the EDEFB tree alone.  EDEFB uses FitzCLIM for its interface.
 
 ## Copyright and license
 

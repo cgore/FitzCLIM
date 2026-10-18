@@ -35,14 +35,33 @@
 (defpackage :FitzCLIM
   (:use :common-lisp
         :sigma/behave
-        :FitzCLIM/geometry))
+        :FitzCLIM/geometry
+        :FitzCLIM/graphics/design
+        :FitzCLIM/graphics/color
+        :FitzCLIM/graphics/opacity
+        :FitzCLIM/graphics/compose
+        :FitzCLIM/graphics/line-style
+        :FitzCLIM/graphics/text-style))
 (in-package :FitzCLIM)
 
-(do-external-symbols (symbol :FitzCLIM/geometry)
-  (export symbol))
+(dolist (package '(:FitzCLIM/geometry
+                   :FitzCLIM/graphics/design
+                   :FitzCLIM/graphics/color
+                   :FitzCLIM/graphics/opacity
+                   :FitzCLIM/graphics/compose
+                   :FitzCLIM/graphics/line-style
+                   :FitzCLIM/graphics/text-style))
+  (do-external-symbols (symbol package)
+    (export symbol)))
 
 (behavior 'make-point
   (let ((point (make-point -2 5)))
     (should-be-true (pointp point))
     (should= -2 (point-x point))
     (should= 5 (point-y point))))
+
+(behavior 'make-rgb-color
+  (let ((color (make-rgb-color 0 0 1)))
+    (should-be-true (colorp color))
+    (should-eq :butt (line-style-cap-shape (make-line-style)))
+    (should-eq :sans-serif (text-style-family *default-text-style*))))

@@ -70,5 +70,16 @@
         :depends-on ("combine" "transformation"))
        (:file "bounding-rectangle"
         :depends-on ("polygon" "rectangle" "combine"))))
+     (:module "graphics"
+      :components
+      ((:file "design")
+       (:file "color"
+        :depends-on ("design"))
+       (:file "opacity"
+        :depends-on ("design"))
+       (:file "compose"
+        :depends-on ("color" "opacity"))
+       (:file "line-style")
+       (:file "text-style")))
      (:file "fitzclim"
-      :depends-on ("geometry"))))))
+      :depends-on ("geometry" "graphics"))))))

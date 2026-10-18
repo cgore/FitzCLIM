@@ -1,0 +1,28 @@
+# Ignore emacs swap and temp files.
+\#*\#
+.#*
+
+# Ignore vim swap and temp files.
+*~
+*.sw[nop]
+
+# Ignore SBCL compiled code and cores.
+*.fasl
+*.dx32fsl
+*.dx64fsl
+*.lx32fsl
+*.lx64fsl
+*.x86f
+*.lib
+*.core
+
+# Ignore some LaTeX stuff.
+documentation/*.aux
+documentation/*.bbl
+documentation/*.blg
+documentation/*.dvi
+documentation/*.idx
+documentation/*.log
+documentation/*.out
+documentation/*.ps
+documentation/*.toc

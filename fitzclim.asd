@@ -162,10 +162,20 @@
       ((:file "windows")
        (:file "gl"
         :depends-on ("windows"))))
+     (:module "cocoa"
+      :if-feature :darwin
+      :depends-on ("port" "command" "frame" "pane" "gadget" "event" "sheet"
+                   "geometry" "layout" "medium" "output-record" "graphics"
+                   "opengl")
+      :components
+      ((:file "runtime")
+       (:file "frames"
+        :depends-on ("runtime"))))
      (:file "fitzclim"
       :depends-on ("geometry" "graphics" "sheet" "command" "frame"
                    "event" "presentation" "output-record" "medium"
                    "pane" "gadget" "layout" "formatted-output"
                    "redisplay" "input-editor" "dialog" "opengl"
                    "port"
-                   #+win32 "windows"))))))
+                   #+win32 "windows"
+                   #+darwin "cocoa"))))))

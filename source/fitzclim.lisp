@@ -58,7 +58,8 @@
         :FitzCLIM/dialog
         :FitzCLIM/opengl
         :FitzCLIM/port
-        #+win32 :FitzCLIM/windows))
+        #+win32 :FitzCLIM/windows
+        #+darwin :FitzCLIM/cocoa))
 (in-package :FitzCLIM)
 
 (dolist (package '(:FitzCLIM/geometry
@@ -84,7 +85,8 @@
                    :FitzCLIM/dialog
                    :FitzCLIM/opengl
                    :FitzCLIM/port
-                   #+win32 :FitzCLIM/windows))
+                   #+win32 :FitzCLIM/windows
+                   #+darwin :FitzCLIM/cocoa))
   (do-external-symbols (symbol package)
     (export symbol)))
 
@@ -120,7 +122,11 @@
   (let ((manager (make-frame-manager)))
     (should-be-true (typep manager 'windows-frame-manager))
     (should-be-true (typep (frame-manager-port manager) 'port)))
-  #-win32
+  #+darwin
+  (let ((manager (make-frame-manager)))
+    (should-be-true (typep manager 'cocoa-frame-manager))
+    (should-be-true (typep (frame-manager-port manager) 'port)))
+  #-(or win32 darwin)
   (handler-case
       (progn
         (make-frame-manager)

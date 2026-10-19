@@ -36,6 +36,7 @@
   (:use :common-lisp
         :sigma/behave
         :sb-alien
+        :FitzCLIM/command
         :FitzCLIM/frame
         :FitzCLIM/pane
         :FitzCLIM/gadget
@@ -1996,6 +1997,106 @@ message was dispatched.  This does not wait."))
              (should= #xffffff (pane-pixel canvas 58 8))
              (should= #x0000ff (pane-pixel canvas 42 42))
              (should-be-true (pane-has-dark-pixel? canvas 2 34 24 16))
+             (when *window-proc-error*
+               (error "The window procedure failed: ~A" *window-proc-error*))
+             (disown-frame manager frame)))
+      (when (member frame (frame-manager-frames manager) :test #'eq)
+        (disown-frame manager frame)))))
+
+(defun presentation-under-pointer (event)
+  "Return the presentation under a pointer press, or NIL.
+An application pane is searched through its output history.  An OpenGL
+pane is searched through its scene."
+  (let ((sheet (event-sheet event))
+        (x (pointer-event-x event))
+        (y (pointer-event-y event)))
+    (cond
+      ((typep sheet 'application-pane)
+       (presentation-at-position sheet x y))
+      ((typep sheet 'opengl-pane)
+       (opengl-presentation-at-position sheet x y)))))
+
+(defun command-from-pointer-event (frame event)
+  "Return the command a pointer press on FRAME produces, or NIL."
+  (when (typep event 'pointer-button-press-event)
+    (let ((presentation (presentation-under-pointer event))
+          (sheet (event-sheet event)))
+      (when presentation
+        (command-from-presentation presentation event
+                                   (frame-command-table frame)
+                                   :frame frame
+                                   :window sheet
+                                   :x (pointer-event-x event)
+                                   :y (pointer-event-y event))))))
+
+(defun read-windows-frame-command (frame)
+  "Return the next command a pointer press on FRAME produces, or NIL.
+Posted Windows messages are dispatched first.  Motion, releases, and
+presses that name no command are skipped.  NIL means this frame's port
+queue is empty."
+  (let ((port (gethash frame *frame-ports*)))
+    (when port
+      (loop repeat 32
+            while (process-next-event port))
+      (loop for event = (port-next-event port)
+            while event
+            for command = (command-from-pointer-event frame event)
+            when command
+              return command))))
+
+(setf *frame-event-reader* #'read-windows-frame-command)
+
+(define-application-frame windows-pick-frame ()
+  ((word
+    :initform nil
+    :accessor picked-word))
+  (:pretty-name "Windows Pick")
+  (:panes
+   (canvas :application :width 120 :height 40))
+  (:layouts
+   (default (progn canvas)))
+  (:geometry 120 40))
+
+(define-command (com-pick-word :command-table windows-pick-frame :name t)
+    ((word string))
+  "Remember WORD on the current frame and return it."
+  (setf (picked-word *application-frame*) word))
+
+(define-presentation-to-command-translator pick-word
+    (string com-pick-word windows-pick-frame
+     :gesture :select)
+    (object)
+  (list object))
+
+(behavior 'windows-pointer-command
+  (setf *window-proc-error* nil)
+  (let ((manager (make-windows-frame-manager))
+        (frame (make-application-frame 'windows-pick-frame)))
+    (unwind-protect
+         (progn
+           (should-be-null (read-frame-command frame))
+           (adopt-frame manager frame)
+           (let ((canvas (find-pane-named frame 'canvas)))
+             (setf (stream-cursor-position canvas) (values 2 10))
+             (present "Nostromo" :stream canvas :type 'string)
+             (send-message (sheet-mirror canvas) +wm-lbuttondown+
+                           0 (logior 70 (ash 10 16)))
+             (should-be-null (read-frame-command frame))
+             (setf (frame-pending-commands frame) '((com-pick-word "queued")))
+             (send-message (sheet-mirror canvas) +wm-mousemove+
+                           0 (logior 10 (ash 10 16)))
+             (send-message (sheet-mirror canvas) +wm-rbuttondown+
+                           0 (logior 10 (ash 10 16)))
+             (send-message (sheet-mirror canvas) +wm-lbuttondown+
+                           0 (logior 10 (ash 10 16)))
+             (should-equal "queued" (second (read-frame-command frame)))
+             (let ((command (read-frame-command frame)))
+               (should-eq 'com-pick-word (first command))
+               (should-equal "Nostromo" (second command)))
+             (send-message (sheet-mirror canvas) +wm-lbuttondown+
+                           0 (logior 10 (ash 10 16)))
+             (should-eq frame (run-frame-top-level frame))
+             (should-equal "Nostromo" (picked-word frame))
              (when *window-proc-error*
                (error "The window procedure failed: ~A" *window-proc-error*))
              (disown-frame manager frame)))

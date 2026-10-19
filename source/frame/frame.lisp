@@ -59,6 +59,7 @@
            :frame-top-level-sheet
            :frame-width
            :framep
+           :*frame-event-reader*
            :layout-frame
            :make-application-frame
            :read-frame-command
@@ -82,8 +83,9 @@
     :initform nil
     :accessor frame-pending-commands
     :documentation "Commands waiting for READ-FRAME-COMMAND.  Each
-    entry is a command name or a list of a name and arguments.  A frame
-    manager replaces this queue with input from the user.")
+    entry is a command name or a list of a name and arguments.  When
+    this queue is empty, *FRAME-EVENT-READER* may supply the next
+    command.")
    (named-panes
     :initform nil
     :accessor frame-named-panes
@@ -288,13 +290,23 @@ Missing sizes use the frame's current width and height."
     (error "There is no application frame."))
   (throw 'frame-exit frame))
 
+(defvar *frame-event-reader* nil
+  "A function of one frame, or NIL.
+READ-FRAME-COMMAND calls it when the frame has no pending command.
+The function returns a command, or NIL when input has ended.  A frame
+manager sets it.  NIL keeps a windowless loop from waiting.")
+
 (defgeneric read-frame-command (frame)
   (:documentation
    "Return the next command for FRAME, or NIL to leave the loop.
-   A command is a name, or a list of a name and its arguments."))
+   A command is a name, or a list of a name and its arguments.
+   A pending command is returned first.  *FRAME-EVENT-READER* is used
+   only when that queue is empty."))
 
 (defmethod read-frame-command ((frame application-frame))
-  (pop (frame-pending-commands frame)))
+  (or (pop (frame-pending-commands frame))
+      (when *frame-event-reader*
+        (funcall *frame-event-reader* frame))))
 
 (defgeneric execute-frame-command (frame command)
   (:documentation
@@ -354,6 +366,7 @@ runs.  Return FRAME."
           '((com-plus 2) (com-plus 3) (com-quit-adder)))
     (should-eq frame (run-frame-top-level frame))
     (should= 10 (adder-total frame))
+    (should-be-null (read-frame-command frame))
     (should-be-true
      (handler-case
          (progn (execute-frame-command frame '(com-plus "no")) nil)

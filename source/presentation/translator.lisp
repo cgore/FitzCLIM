@@ -285,17 +285,27 @@ arguments BODY produced."
                 stream))))
   nil)
 
-(defun command-from-presentation (presentation event command-table)
-  "Return the command PRESENTATION and EVENT produce, or NIL."
+(defun command-from-presentation (presentation event command-table
+                                  &key frame window x y)
+  "Return the command PRESENTATION and EVENT produce, or NIL.
+FRAME, WINDOW, X, and Y are passed to the translator and its tester."
   (let* ((table (if (command-table-p command-table)
                     command-table
                     (find-command-table command-table)))
          (context 'command)
          (translators (find-applicable-translators presentation context table
-                                                   :event event)))
+                                                   :event event
+                                                   :frame frame
+                                                   :window window
+                                                   :x x
+                                                   :y y)))
     (when translators
       (call-presentation-translator (first translators) presentation context
-                                    :event event))))
+                                    :event event
+                                    :frame frame
+                                    :window window
+                                    :x x
+                                    :y y))))
 
 (defun throw-highlighted-presentation (presentation input-context event
                                         &key frame window x y)

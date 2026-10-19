@@ -298,3 +298,53 @@ taken from the front buffer, which holds the last redraw."
              (should-be-null (gethash view *opengl-contexts*))))
       (when (member frame (frame-manager-frames manager) :test #'eq)
         (disown-frame manager frame)))))
+
+(define-application-frame windows-scene-frame ()
+  ((object
+    :initform nil
+    :accessor picked-scene-object))
+  (:pretty-name "Windows Scene")
+  (:panes
+   (view :opengl :width 64 :height 64))
+  (:layouts
+   (default (progn view)))
+  (:geometry 64 64))
+
+(define-command (com-pick-scene :command-table windows-scene-frame :name t)
+    ((object string))
+  "Remember OBJECT on the current frame and return it."
+  (setf (picked-scene-object *application-frame*) object))
+
+(define-presentation-to-command-translator pick-scene-object
+    (string com-pick-scene windows-scene-frame
+     :gesture :select)
+    (object)
+  (list object))
+
+(behavior 'windows-scene-command
+  (setf *window-proc-error* nil)
+  (let ((manager (make-windows-frame-manager))
+        (frame (make-application-frame 'windows-scene-frame)))
+    (unwind-protect
+         (progn
+           (adopt-frame manager frame)
+           (let ((view (find-pane-named frame 'view)))
+             (add-scene-box view "near" 'string -1/2 -1/2 -2 1/2 1/2 -1)
+             (add-scene-box view "far" 'string -1/2 -1/2 -6 1/2 1/2 -4)
+             (send-message (sheet-mirror view) +wm-lbuttondown+
+                           0 (logior 32 (ash 32 16)))
+             (let ((command (read-frame-command frame)))
+               (should-eq 'com-pick-scene (first command))
+               (should-equal "near" (second command)))
+             (send-message (sheet-mirror view) +wm-lbuttondown+ 0 0)
+             (should-be-null (read-frame-command frame))
+             (send-message (sheet-mirror view) +wm-lbuttondown+
+                           0 (logior 32 (ash 32 16)))
+             (should-eq frame (run-frame-top-level frame))
+             (should-equal "near" (picked-scene-object frame))
+             (when *window-proc-error*
+               (error "The window procedure failed: ~A" *window-proc-error*))
+             (disown-frame manager frame)
+             (should-be-null (gethash view *opengl-contexts*))))
+      (when (member frame (frame-manager-frames manager) :test #'eq)
+        (disown-frame manager frame)))))

@@ -146,8 +146,8 @@
       :components
       ((:file "opengl")))
      (:module "windows"
-      :depends-on ("frame" "pane" "gadget" "event" "sheet" "geometry"
-                   "medium" "output-record" "graphics" "opengl")
+      :depends-on ("command" "frame" "pane" "gadget" "event" "sheet"
+                   "geometry" "medium" "output-record" "graphics" "opengl")
       :components
       ((:file "windows")
        (:file "gl"

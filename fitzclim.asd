@@ -81,5 +81,9 @@
         :depends-on ("color" "opacity"))
        (:file "line-style")
        (:file "text-style")))
+     (:module "sheet"
+      :depends-on ("geometry")
+      :components
+      ((:file "sheet")))
      (:file "fitzclim"
-      :depends-on ("geometry" "graphics"))))))
+      :depends-on ("geometry" "graphics" "sheet"))))))

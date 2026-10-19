@@ -41,7 +41,8 @@
         :FitzCLIM/graphics/opacity
         :FitzCLIM/graphics/compose
         :FitzCLIM/graphics/line-style
-        :FitzCLIM/graphics/text-style))
+        :FitzCLIM/graphics/text-style
+        :FitzCLIM/sheet))
 (in-package :FitzCLIM)
 
 (dolist (package '(:FitzCLIM/geometry
@@ -50,7 +51,8 @@
                    :FitzCLIM/graphics/opacity
                    :FitzCLIM/graphics/compose
                    :FitzCLIM/graphics/line-style
-                   :FitzCLIM/graphics/text-style))
+                   :FitzCLIM/graphics/text-style
+                   :FitzCLIM/sheet))
   (do-external-symbols (symbol package)
     (export symbol)))
 
@@ -65,3 +67,9 @@
     (should-be-true (colorp color))
     (should-eq :butt (line-style-cap-shape (make-line-style)))
     (should-eq :sans-serif (text-style-family *default-text-style*))))
+
+(behavior 'adopt-sheet
+  (let ((parent (make-instance 'basic-sheet))
+        (child (make-instance 'basic-sheet)))
+    (adopt-sheet parent child)
+    (should-eq parent (sheet-parent child))))

@@ -42,7 +42,14 @@
         :FitzCLIM/event
         :FitzCLIM/sheet
         :FitzCLIM/geometry
-        :FitzCLIM/layout)
+        :FitzCLIM/layout
+        :FitzCLIM/medium
+        :FitzCLIM/output-record
+        :FitzCLIM/graphics/design
+        :FitzCLIM/graphics/color
+        :FitzCLIM/graphics/opacity
+        :FitzCLIM/graphics/line-style
+        :FitzCLIM/graphics/text-style)
   (:export :adopt-frame
            :disable-frame
            :disown-frame
@@ -57,13 +64,14 @@
 (in-package :FitzCLIM/windows)
 
 (defvar *windows-libraries-loaded* nil
-  "True after user32.dll and kernel32.dll have been loaded.")
+  "True after user32.dll, gdi32.dll, and kernel32.dll have been loaded.")
 
 (defun load-windows-libraries ()
   "Load the Windows libraries this port calls."
   (unless *windows-libraries-loaded*
     (load-shared-object "kernel32.dll")
     (load-shared-object "user32.dll")
+    (load-shared-object "gdi32.dll")
     (setf *windows-libraries-loaded* t)))
 
 (load-windows-libraries)
@@ -94,6 +102,14 @@
 (defparameter +wm-rbuttonup+ #x0205)
 (defparameter +wm-mbuttondown+ #x0207)
 (defparameter +wm-mbuttonup+ #x0208)
+(defparameter +wm-printclient+ #x0318)
+(defparameter +ps-solid+ 0)
+(defparameter +ps-dash+ 1)
+(defparameter +null-brush+ 5)
+(defparameter +transparent+ 1)
+(defparameter +fw-normal+ 400)
+(defparameter +fw-bold+ 700)
+(defparameter +nonantialiased-quality+ 3)
 (defparameter +mk-shift+ 4)
 (defparameter +mk-control+ 8)
 (defparameter +bm-getcheck+ #x00F0)
@@ -240,6 +256,122 @@ so a Lisp range is scaled onto 0 through 1000.")
   (message system-area-pointer))
 (define-alien-routine ("DispatchMessageW" dispatch-message-w) (signed 64)
   (message system-area-pointer))
+(define-alien-routine ("InvalidateRect" invalidate-rect) (signed 32)
+  (hwnd system-area-pointer)
+  (rect system-area-pointer)
+  (erase (signed 32)))
+(define-alien-routine ("GetDC" get-dc) system-area-pointer
+  (hwnd system-area-pointer))
+(define-alien-routine ("ReleaseDC" release-dc) (signed 32)
+  (hwnd system-area-pointer)
+  (hdc system-area-pointer))
+(define-alien-routine ("FillRect" fill-rect) (signed 32)
+  (hdc system-area-pointer)
+  (rect (* win-rect))
+  (brush system-area-pointer))
+(define-alien-routine ("CreateCompatibleDC" create-compatible-dc) system-area-pointer
+  (hdc system-area-pointer))
+(define-alien-routine ("CreateCompatibleBitmap" create-compatible-bitmap)
+    system-area-pointer
+  (hdc system-area-pointer)
+  (width (signed 32))
+  (height (signed 32)))
+(define-alien-routine ("DeleteDC" delete-dc) (signed 32)
+  (hdc system-area-pointer))
+(define-alien-routine ("CreateSolidBrush" create-solid-brush) system-area-pointer
+  (color (unsigned 32)))
+(define-alien-routine ("CreatePen" create-pen) system-area-pointer
+  (style (signed 32))
+  (width (signed 32))
+  (color (unsigned 32)))
+(define-alien-routine ("GetStockObject" get-stock-object) system-area-pointer
+  (object (signed 32)))
+(define-alien-routine ("SelectObject" select-object) system-area-pointer
+  (hdc system-area-pointer)
+  (object system-area-pointer))
+(define-alien-routine ("DeleteObject" delete-object) (signed 32)
+  (object system-area-pointer))
+(define-alien-routine ("MoveToEx" move-to-ex) (signed 32)
+  (hdc system-area-pointer)
+  (x (signed 32))
+  (y (signed 32))
+  (point system-area-pointer))
+(define-alien-routine ("LineTo" line-to) (signed 32)
+  (hdc system-area-pointer)
+  (x (signed 32))
+  (y (signed 32)))
+(define-alien-routine ("Rectangle" gdi-rectangle) (signed 32)
+  (hdc system-area-pointer)
+  (left (signed 32))
+  (top (signed 32))
+  (right (signed 32))
+  (bottom (signed 32)))
+(define-alien-routine ("Polygon" gdi-polygon) (signed 32)
+  (hdc system-area-pointer)
+  (points system-area-pointer)
+  (count (signed 32)))
+(define-alien-routine ("Polyline" gdi-polyline) (signed 32)
+  (hdc system-area-pointer)
+  (points system-area-pointer)
+  (count (signed 32)))
+(define-alien-routine ("SetPixel" set-pixel) (unsigned 32)
+  (hdc system-area-pointer)
+  (x (signed 32))
+  (y (signed 32))
+  (color (unsigned 32)))
+(define-alien-routine ("GetPixel" get-pixel) (unsigned 32)
+  (hdc system-area-pointer)
+  (x (signed 32))
+  (y (signed 32)))
+(define-alien-routine ("SetTextColor" set-text-color) (unsigned 32)
+  (hdc system-area-pointer)
+  (color (unsigned 32)))
+(define-alien-routine ("SetBkMode" set-bk-mode) (signed 32)
+  (hdc system-area-pointer)
+  (mode (signed 32)))
+(define-alien-routine ("TextOutW" text-out-w) (signed 32)
+  (hdc system-area-pointer)
+  (x (signed 32))
+  (y (signed 32))
+  (text system-area-pointer)
+  (count (signed 32)))
+(define-alien-routine ("CreateFontW" create-font-w) system-area-pointer
+  (height (signed 32))
+  (width (signed 32))
+  (escapement (signed 32))
+  (orientation (signed 32))
+  (weight (signed 32))
+  (italic (unsigned 32))
+  (underline (unsigned 32))
+  (strikeout (unsigned 32))
+  (charset (unsigned 32))
+  (out-precision (unsigned 32))
+  (clip-precision (unsigned 32))
+  (quality (unsigned 32))
+  (pitch (unsigned 32))
+  (face system-area-pointer))
+(define-alien-routine ("SaveDC" save-dc) (signed 32)
+  (hdc system-area-pointer))
+(define-alien-routine ("RestoreDC" restore-dc) (signed 32)
+  (hdc system-area-pointer)
+  (saved (signed 32)))
+(define-alien-routine ("IntersectClipRect" intersect-clip-rect) (signed 32)
+  (hdc system-area-pointer)
+  (left (signed 32))
+  (top (signed 32))
+  (right (signed 32))
+  (bottom (signed 32)))
+(define-alien-routine ("SetROP2" set-rop2) (signed 32)
+  (hdc system-area-pointer)
+  (mode (signed 32)))
+(define-alien-routine ("SetPolyFillMode" set-poly-fill-mode) (signed 32)
+  (hdc system-area-pointer)
+  (mode (signed 32)))
+
+(define-alien-type gdi-point
+  (struct gdi-point
+    (x (signed 32))
+    (y (signed 32))))
 
 (defvar *module-instance* nil
   "The HINSTANCE of this process.")
@@ -685,15 +817,439 @@ A notification from that control must not write the value back.")
           (send-message lparam +sbm-setpos+ position 1)
           (setf (gadget-value sheet) (position-to-slider sheet position)))))))
 
+(defvar *gdi-hdc* nil
+  "The device context currently receiving GDI output, or NIL.")
+
+(defclass gdi-medium (basic-medium)
+  ()
+  (:documentation
+   "A medium that draws an application pane with GDI when a device
+context is bound.  Outside of painting, a drawing call invalidates the
+pane so the next paint replays the output history."))
+
+(defun ensure-gdi-medium (pane)
+  "Use a GDI medium for PANE, keeping the drawing state it already has."
+  (let ((old (stream-medium pane)))
+    (unless (typep old 'gdi-medium)
+      (let ((medium (make-instance 'gdi-medium)))
+        (when old
+          (setf (medium-foreground medium) (medium-foreground old)
+                (medium-background medium) (medium-background old)
+                (medium-ink medium) (medium-ink old)
+                (medium-line-style medium) (medium-line-style old)
+                (medium-text-style medium) (medium-text-style old)
+                (medium-transformation medium) (medium-transformation old)
+                (medium-clipping-region medium) (medium-clipping-region old)))
+        (setf (medium-sheet medium) pane
+              (stream-medium pane) medium))))
+  (stream-medium pane))
+
+(defun rgb-colorref (red green blue)
+  "Return a COLORREF for channels RED, GREEN, and BLUE, each from 0 to 1."
+  (logior (round (* 255 red))
+          (ash (round (* 255 green)) 8)
+          (ash (round (* 255 blue)) 16)))
+
+(defun ink-colorref (medium ink)
+  "Return a COLORREF for INK, :FLIP for flipping ink, or NIL to skip it.
+Foreground and background inks take the medium's colors.  A design
+whose opacity is below one half is skipped."
+  (cond
+    ((and (eq ink +foreground-ink+)
+          (not (eq (medium-foreground medium) ink)))
+     (ink-colorref medium (medium-foreground medium)))
+    ((and (eq ink +background-ink+)
+          (not (eq (medium-background medium) ink)))
+     (ink-colorref medium (medium-background medium)))
+    ((eq ink +flipping-ink+) :flip)
+    ((colored-design? ink)
+     (multiple-value-bind (red green blue opacity) (design-rgba ink)
+       (when (>= opacity 1/2)
+         (rgb-colorref red green blue))))
+    (t nil)))
+
+(behavior 'ink-colorref
+  (let ((medium (make-instance 'basic-medium)))
+    (should= #x000000 (ink-colorref medium +black+))
+    (should= #x0000ff (ink-colorref medium +red+))
+    (should= #x00ff00 (ink-colorref medium +green+))
+    (should= #xff0000 (ink-colorref medium +blue+))
+    (should= #xffffff (ink-colorref medium +white+))
+    (should= #x000000 (ink-colorref medium +foreground-ink+))
+    (should= #xffffff (ink-colorref medium +background-ink+))
+    (should-eq :flip (ink-colorref medium +flipping-ink+))
+    (should-be-null (ink-colorref medium +transparent-ink+))))
+
+(defun line-thickness-pixels (style)
+  "Return the pixel thickness of STYLE.  A point is 96/72 of a pixel."
+  (let* ((style (or style (make-line-style)))
+         (thickness (line-style-thickness style))
+         (unit (line-style-unit style)))
+    (max 1 (round (cond
+                    ((eq unit :point) (* thickness 96/72))
+                    ((realp unit) (* thickness unit))
+                    (t thickness))))))
+
+(defun line-dashed? (style)
+  "Return true when STYLE asks for a dashed stroke."
+  (and style (line-style-dashes style)))
+
+(defun invalidate-sheet (sheet)
+  "Ask Windows to paint SHEET again."
+  (let ((hwnd (and sheet (sheet-mirror sheet))))
+    (when hwnd
+      (invalidate-rect (hwnd-sap hwnd) (sb-sys:int-sap 0) 1))))
+
+(defun call-with-ink (hdc color function)
+  "Call FUNCTION with a COLORREF.  Flipping ink reverses the pixels."
+  (cond
+    ((eq color :flip)
+     (let ((old (set-rop2 hdc 6)))
+       (unwind-protect
+           (funcall function #x000000)
+         (set-rop2 hdc old))))
+    ((integerp color)
+     (funcall function color))))
+
+(defun call-with-pen (hdc color thickness dashed function)
+  "Select a pen of COLOR and call FUNCTION.  A dashed pen is one pixel wide."
+  (let* ((width (max 1 (round thickness)))
+         (pen (create-pen (if (and dashed (<= width 1)) +ps-dash+ +ps-solid+)
+                          width color))
+         (old (select-object hdc pen)))
+    (unwind-protect
+        (funcall function)
+      (select-object hdc old)
+      (delete-object pen))))
+
+(defun call-with-brush (hdc color filled function)
+  "Select a brush and call FUNCTION.  An unfilled shape uses a null brush."
+  (let ((brush (if filled
+                   (create-solid-brush color)
+                   (get-stock-object +null-brush+))))
+    (let ((old (select-object hdc brush)))
+      (unwind-protect
+          (funcall function)
+        (select-object hdc old)
+        (when filled
+          (delete-object brush))))))
+
+(defun gdi-fill-rectangle (hdc x1 y1 x2 y2 color thickness filled dashed)
+  "Draw a rectangle.  GDI's right and bottom edges are exclusive."
+  (let ((left (round (min x1 x2)))
+        (top (round (min y1 y2)))
+        (right (1+ (round (max x1 x2))))
+        (bottom (1+ (round (max y1 y2)))))
+    (call-with-pen hdc color (if filled 1 thickness) (and (not filled) dashed)
+      (lambda ()
+        (call-with-brush hdc color filled
+          (lambda ()
+            (gdi-rectangle hdc left top right bottom)))))))
+
+(defun set-gdi-points (points coordinates)
+  "Write COORDINATES, a flat list, into the GDI POINT array POINTS."
+  (loop for index from 0
+        for (x y) on coordinates by #'cddr
+        do (setf (slot (deref points index) 'x) (round x)
+                 (slot (deref points index) 'y) (round y))))
+
+(defun call-with-points (coordinates function)
+  "Call FUNCTION with a POINT array and a count for COORDINATES."
+  (let* ((count (floor (length coordinates) 2))
+         (points (make-alien gdi-point count)))
+    (unwind-protect
+        (progn
+          (set-gdi-points points coordinates)
+          (funcall function (alien-sap points) count))
+      (free-alien points))))
+
+(defun gdi-fill-polygon (hdc coordinates color thickness filled closed dashed)
+  "Draw a polygon.  A filled polygon is closed.  An open stroke is a polyline."
+  (when (>= (length coordinates) 4)
+    (call-with-pen hdc color (if filled 1 thickness) (and (not filled) dashed)
+      (lambda ()
+        (call-with-points coordinates
+          (lambda (points count)
+            (if (or filled closed)
+                (call-with-brush hdc color filled
+                  (lambda ()
+                    (gdi-polygon hdc points count)))
+                (gdi-polyline hdc points count))))))))
+
+(defun full-ellipse? (start end)
+  "Return true when START and END describe a whole ellipse."
+  (or (and (null start) (null end))
+      (and start end (>= (abs (- end start)) (* 2 pi 99/100)))))
+
+(defun ellipse-outline (center-x center-y radius-1-dx radius-1-dy
+                        radius-2-dx radius-2-dy start end)
+  "Return a flat coordinate list for the ellipse boundary.
+A full ellipse is used when START and END are NIL.  Angles are radians
+in the sheet's coordinate system."
+  (let* ((start (or start 0))
+         (end (or end (+ start (* 2 pi))))
+         (steps 48))
+    (loop for index from 0 to steps
+          for angle = (+ start (* (- end start) (/ index steps)))
+          collect (+ center-x
+                     (* radius-1-dx (cos angle))
+                     (* radius-2-dx (sin angle)))
+          collect (+ center-y
+                     (* radius-1-dy (cos angle))
+                     (* radius-2-dy (sin angle))))))
+
+(behavior 'ellipse-outline
+  (let ((points (ellipse-outline 10 10 4 0 0 4 nil nil)))
+    (should= 14 (first points))
+    (should= 10 (second points))
+    (should-be-true (> (length points) 16))
+    (should-be-true (full-ellipse? nil nil))
+    (should-be-false (full-ellipse? 0 (/ pi 2)))))
+
+(defun gdi-ellipse (hdc center-x center-y radius-1-dx radius-1-dy
+                    radius-2-dx radius-2-dy start end color thickness
+                    filled dashed)
+  "Draw an ellipse as a polygon, including a pie when the arc is partial."
+  (let ((outline (ellipse-outline center-x center-y
+                                  radius-1-dx radius-1-dy
+                                  radius-2-dx radius-2-dy
+                                  start end)))
+    (gdi-fill-polygon hdc
+                      (if (and filled (not (full-ellipse? start end)))
+                          (append outline (list center-x center-y))
+                          outline)
+                      color thickness filled t dashed)))
+
+(defun text-style-bold? (style)
+  "Return true when STYLE is bold."
+  (member (text-style-face (parse-text-style style)) '(:bold :bold-italic)))
+
+(defun text-style-italic? (style)
+  "Return true when STYLE is italic."
+  (member (text-style-face (parse-text-style style)) '(:italic :bold-italic)))
+
+(defun font-face-name (style)
+  "Return a Windows face name for STYLE."
+  (let ((family (text-style-family (parse-text-style style))))
+    (cond
+      ((stringp family) family)
+      ((eq family :fix) "Consolas")
+      ((eq family :serif) "Times New Roman")
+      (t "Segoe UI"))))
+
+(defun font-pitch (style)
+  "Return the pitch and family bits for STYLE."
+  (let ((family (text-style-family (parse-text-style style))))
+    (cond
+      ((eq family :fix) (logior 1 48))
+      ((eq family :serif) (logior 2 16))
+      (t (logior 2 32)))))
+
+(defun text-origin (string x y align-x align-y style)
+  "Return the top-left pixel of STRING drawn at the alignment point X, Y."
+  (multiple-value-bind (width ascent descent) (text-metrics style string)
+    (let ((height (+ ascent descent)))
+      (values (ecase align-x
+                (:left x)
+                (:center (- x (/ width 2)))
+                (:right (- x width)))
+              (ecase align-y
+                (:top y)
+                (:center (- y (/ height 2)))
+                (:baseline (- y ascent))
+                (:bottom (- y height)))))))
+
+(defun gdi-text (hdc string x y align-x align-y style color)
+  "Draw STRING.  The recording metrics decide the alignment."
+  (multiple-value-bind (origin-x origin-y)
+      (text-origin string x y align-x align-y style)
+    (with-utf16 (face (font-face-name style))
+      (let ((font (create-font-w (round (- (max 1 (text-style-point-size style))))
+                                 0 0 0
+                                 (if (text-style-bold? style) +fw-bold+ +fw-normal+)
+                                 (if (text-style-italic? style) 1 0)
+                                 0 0 1 0 0 +nonantialiased-quality+
+                                 (font-pitch style)
+                                 (alien-sap face))))
+        (when (plusp (sb-sys:sap-int font))
+          (let ((old (select-object hdc font))
+                (old-color (set-text-color hdc color))
+                (old-mode (set-bk-mode hdc +transparent+)))
+            (unwind-protect
+                (with-utf16 (buffer string)
+                  (text-out-w hdc (round origin-x) (round origin-y)
+                              (alien-sap buffer) (length string)))
+              (set-bk-mode hdc old-mode)
+              (set-text-color hdc old-color)
+              (select-object hdc old)
+              (delete-object font))))))))
+
+(defun draw-on-medium (medium ink drawer)
+  "Run DRAWER on the paint device context, or invalidate MEDIUM's sheet.
+DRAWER is called with the device context and a COLORREF."
+  (let ((hdc *gdi-hdc*))
+    (if hdc
+        (call-with-ink hdc (ink-colorref medium ink)
+          (lambda (color)
+            (funcall drawer hdc color)))
+        (invalidate-sheet (medium-sheet medium)))))
+
+(defmethod medium-draw-point* ((medium gdi-medium) x y &key ink line-style)
+  (draw-on-medium medium ink
+    (lambda (hdc color)
+      (let ((thickness (line-thickness-pixels line-style)))
+        (if (<= thickness 1)
+            (set-pixel hdc (round x) (round y) color)
+            (gdi-ellipse hdc x y (/ thickness 2) 0 0 (/ thickness 2)
+                         nil nil color 1 t nil))))))
+
+(defmethod medium-draw-line* ((medium gdi-medium) x1 y1 x2 y2 &key ink line-style)
+  (draw-on-medium medium ink
+    (lambda (hdc color)
+      (call-with-pen hdc color (line-thickness-pixels line-style)
+          (line-dashed? line-style)
+        (lambda ()
+          (move-to-ex hdc (round x1) (round y1) (sb-sys:int-sap 0))
+          (line-to hdc (round x2) (round y2))
+          (set-pixel hdc (round x2) (round y2) color))))))
+
+(defmethod medium-draw-rectangle* ((medium gdi-medium) x1 y1 x2 y2
+                                   &key filled ink line-style)
+  (draw-on-medium medium ink
+    (lambda (hdc color)
+      (gdi-fill-rectangle hdc x1 y1 x2 y2 color
+                          (line-thickness-pixels line-style)
+                          filled
+                          (line-dashed? line-style)))))
+
+(defmethod medium-draw-polygon* ((medium gdi-medium) coordinates
+                                 &key closed filled ink line-style)
+  (draw-on-medium medium ink
+    (lambda (hdc color)
+      (gdi-fill-polygon hdc coordinates color
+                        (line-thickness-pixels line-style)
+                        filled closed
+                        (line-dashed? line-style)))))
+
+(defmethod medium-draw-ellipse* ((medium gdi-medium) center-x center-y
+                                 radius-1-dx radius-1-dy
+                                 radius-2-dx radius-2-dy
+                                 &key filled start-angle end-angle ink line-style)
+  (draw-on-medium medium ink
+    (lambda (hdc color)
+      (gdi-ellipse hdc center-x center-y
+                   radius-1-dx radius-1-dy
+                   radius-2-dx radius-2-dy
+                   start-angle end-angle color
+                   (line-thickness-pixels line-style)
+                   filled
+                   (line-dashed? line-style)))))
+
+(defmethod medium-draw-text* ((medium gdi-medium) string x y
+                              &key start end align-x align-y text-style ink)
+  (draw-on-medium medium ink
+    (lambda (hdc color)
+      (gdi-text hdc
+                (subseq string (or start 0) (or end (length string)))
+                x y
+                (or align-x :left)
+                (or align-y :baseline)
+                (or text-style (medium-text-style medium))
+                color))))
+
+(defmethod replay-displayed-output-record :around
+    ((record displayed-output-record) stream x-offset y-offset)
+  (let ((hdc *gdi-hdc*)
+        (clip (displayed-output-record-clipping-region record)))
+    (cond
+      ((or (null hdc) (null clip) (everywhere-p clip))
+       (call-next-method))
+      ((nowhere-p clip) nil)
+      (t
+       (multiple-value-bind (left top right bottom) (bounding-rectangle* clip)
+         (save-dc hdc)
+         (unwind-protect
+             (progn
+               (intersect-clip-rect hdc
+                                    (floor left) (floor top)
+                                    (1+ (floor right)) (1+ (floor bottom)))
+               (call-next-method))
+           (restore-dc hdc -1)))))))
+
+(defun fill-pane-background (pane hdc)
+  "Fill PANE with its medium's background color."
+  (multiple-value-bind (width height) (sheet-pixel-size pane)
+    (let ((color (ink-colorref (stream-medium pane)
+                               (medium-background (stream-medium pane)))))
+      (when (integerp color)
+        (with-alien ((rect win-rect))
+          (setf (slot rect 'left) 0
+                (slot rect 'top) 0
+                (slot rect 'right) width
+                (slot rect 'bottom) height)
+          (let ((brush (create-solid-brush color)))
+            (unwind-protect
+                (fill-rect hdc (addr rect) brush)
+              (delete-object brush))))))))
+
+(defun paint-sheet (pane hdc)
+  "Fill PANE and replay its output history onto HDC."
+  (let ((*gdi-hdc* hdc))
+    (set-poly-fill-mode hdc 2)
+    (fill-pane-background pane hdc)
+    (replay (stream-output-history pane) pane)))
+
 (defun paint-pane (hwnd)
-  "Validate HWND.  Drawing the output history comes later."
-  (let* ((paint (make-alien (unsigned 8) 16))
+  "Paint the application pane at HWND from its output history."
+  (let* ((paint (make-alien (unsigned 8) 128))
          (sap (alien-sap paint)))
     (unwind-protect
-         (progn
-           (begin-paint (hwnd-sap hwnd) sap)
-           (end-paint (hwnd-sap hwnd) sap))
+        (let ((hdc (begin-paint (hwnd-sap hwnd) sap)))
+          (unwind-protect
+              (let ((pane (mirror-sheet hwnd)))
+                (when (and pane (plusp (sb-sys:sap-int hdc)))
+                  (paint-sheet pane hdc)))
+            (end-paint (hwnd-sap hwnd) sap)))
       (free-alien paint))))
+
+(defun with-pane-pixels (pane function)
+  "Call FUNCTION with a memory device context holding a replay of PANE."
+  (multiple-value-bind (width height) (sheet-pixel-size pane)
+    (let* ((window (hwnd-sap (sheet-mirror pane)))
+           (source (get-dc window))
+           (memory (create-compatible-dc source))
+           (bitmap (create-compatible-bitmap source (max 1 width) (max 1 height)))
+           (old (select-object memory bitmap)))
+      (unwind-protect
+          (progn
+            (send-message (sheet-mirror pane) +wm-printclient+
+                          (sb-sys:sap-int memory) 0)
+            (funcall function memory))
+        (select-object memory old)
+        (delete-object bitmap)
+        (delete-dc memory)
+        (release-dc window source)))))
+
+(defun pane-pixel (pane x y)
+  "Return the COLORREF of the pixel at X and Y on a replay of PANE."
+  (with-pane-pixels pane
+    (lambda (hdc)
+      (let ((value (get-pixel hdc (round x) (round y))))
+        (if (= value #xffffffff)
+            (error "GetPixel failed at ~D, ~D." x y)
+            (logand value #xffffff))))))
+
+(defun pane-has-dark-pixel? (pane left top width height)
+  "Return true when a replay of PANE has a near-black pixel in the box."
+  (with-pane-pixels pane
+    (lambda (hdc)
+      (loop for y from (round top) below (+ (round top) (round height))
+            thereis (loop for x from (round left) below (+ (round left) (round width))
+                          for value = (get-pixel hdc x y)
+                          thereis (and (/= value #xffffffff)
+                                       (< (logand value #xff) 40)
+                                       (< (logand (ash value -8) #xff) 40)
+                                       (< (logand (ash value -16) #xff) 40)))))))
 
 (defun enqueue-event (sheet event)
   "Queue EVENT for the port that realized SHEET."
@@ -836,6 +1392,11 @@ A notification from that control must not write the value back.")
     ((or (= message +wm-keydown+) (= message +wm-keyup+) (= message +wm-char+))
      (handle-key hwnd message wparam)
      (values t 0))
+    ((= message +wm-printclient+)
+     (let ((pane (mirror-sheet hwnd)))
+       (when (and (plusp wparam) (typep pane 'application-pane))
+         (paint-sheet pane (sb-sys:int-sap wparam))))
+     (values t 0))
     ((and (= message +wm-paint+)
           (typep (mirror-sheet hwnd) 'application-pane))
      (paint-pane hwnd)
@@ -927,6 +1488,8 @@ A notification from that control must not write the value back.")
                                    (hwnd-sap (sheet-mirror root))
                                    (next-control-id))))
           (remember-mirror sheet (sb-sys:sap-int hwnd))
+          (when (typep sheet 'application-pane)
+            (ensure-gdi-medium sheet))
           (refresh-mirror sheet))))))
 
 (defun destroy-mirrors (sheet)
@@ -1362,6 +1925,55 @@ message was dispatched.  This does not wait."))
                (should-eq :shift (keyboard-event-key-name event))
                (should= 0 *windows-modifier-state*))
              (should-be-null (port-next-event port))
+             (when *window-proc-error*
+               (error "The window procedure failed: ~A" *window-proc-error*))
+             (disown-frame manager frame)))
+      (when (member frame (frame-manager-frames manager) :test #'eq)
+        (disown-frame manager frame)))))
+
+(define-application-frame windows-drawing-frame ()
+  ()
+  (:pretty-name "Windows Drawing")
+  (:panes
+   (canvas :application :width 80 :height 60))
+  (:layouts
+   (default (progn canvas)))
+  (:geometry 80 60))
+
+(behavior 'windows-drawing
+  (setf *window-proc-error* nil)
+  (let ((manager (make-windows-frame-manager))
+        (frame (make-application-frame 'windows-drawing-frame)))
+    (unwind-protect
+         (progn
+           (adopt-frame manager frame)
+           (let ((canvas (find-pane-named frame 'canvas)))
+             (multiple-value-bind (width height) (sheet-pixel-size canvas)
+               (should= 80 width)
+               (should= 60 height))
+             (should-be-true (typep (stream-medium canvas) 'gdi-medium))
+             (draw-rectangle* canvas 2 2 16 12 :ink +red+ :filled t)
+             (draw-point* canvas 24 6 :ink +black+)
+             (draw-line* canvas 0 18 30 18 :ink +blue+)
+             (draw-circle* canvas 58 18 8 :ink +green+ :filled t)
+             (draw-polygon* canvas '(40 40 70 40 40 55) :ink +red+ :filled t)
+             (draw-text* canvas "Ag" 2 34 :align-y :top :ink +black+
+                         :text-style (make-text-style :sans-serif :bold 16))
+             (let ((count (output-record-count (stream-output-history canvas))))
+               (should= 6 count)
+               (send-message (sheet-mirror canvas) +wm-paint+ 0 0)
+               (should= count
+                        (output-record-count (stream-output-history canvas))))
+             (should= #xffffff (pane-pixel canvas 0 0))
+             (should= #x0000ff (pane-pixel canvas 6 6))
+             (should= #xffffff (pane-pixel canvas 20 6))
+             (should= #x000000 (pane-pixel canvas 24 6))
+             (should= #xff0000 (pane-pixel canvas 10 18))
+             (should= #xffffff (pane-pixel canvas 10 19))
+             (should= #x00ff00 (pane-pixel canvas 58 18))
+             (should= #xffffff (pane-pixel canvas 58 8))
+             (should= #x0000ff (pane-pixel canvas 42 42))
+             (should-be-true (pane-has-dark-pixel? canvas 2 34 24 16))
              (when *window-proc-error*
                (error "The window procedure failed: ~A" *window-proc-error*))
              (disown-frame manager frame)))

@@ -130,7 +130,8 @@
       :components
       ((:file "gadget")))
      (:module "windows"
-      :depends-on ("frame" "pane" "gadget" "event" "sheet" "geometry")
+      :depends-on ("frame" "pane" "gadget" "event" "sheet" "geometry"
+                   "medium" "output-record" "graphics")
       :components
       ((:file "windows")))
      (:file "fitzclim"

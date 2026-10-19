@@ -1,0 +1,93 @@
+%%%% Copyright (C) 2026, Christopher Mark Gore,
+%%%% Soli Deo Gloria,
+%%%% All rights reserved.
+%%%%
+%%%% 22 Forest Glade Court, Saint Charles, Missouri 63304 USA.
+%%%% Web: http://cgore.com
+%%%% Email: cgore@cgore.com
+%%%%
+%%%% Redistribution and use in source and binary forms, with or without
+%%%% modification, are permitted provided that the following conditions are met:
+%%%%
+%%%%     * Redistributions of source code must retain the above copyright
+%%%%       notice, this list of conditions and the following disclaimer.
+%%%%
+%%%%     * Redistributions in binary form must reproduce the above copyright
+%%%%       notice, this list of conditions and the following disclaimer in the
+%%%%       documentation and/or other materials provided with the distribution.
+%%%%
+%%%%     * Neither the name of Christopher Mark Gore nor the names of other
+%%%%       contributors may be used to endorse or promote products derived from
+%%%%       this software without specific prior written permission.
+%%%%
+%%%% THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+%%%% AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+%%%% IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+%%%% ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+%%%% LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+%%%% CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+%%%% SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+%%%% INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+%%%% CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+%%%% ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+%%%% POSSIBILITY OF SUCH DAMAGE.
+
+\chapter{Introduction}
+
+FitzCLIM is a Common Lisp implementation of the \textsc{Clim}~II
+protocols~\cite{clim-ii} and of the \textsc{Clim}~2.2 revisions.  The
+2.2 revisions are recorded in Franz's \textsc{Clim}~2.2 User
+Guide~\cite{clim-22-ug}, not in a second formal specification.  That
+guide is copyrighted.  This manual does not copy it.  FitzCLIM is aimed
+at \textsc{Sbcl}.
+
+The frame manager realizes the standard gadgets as native controls.  On
+Windows those are Windows controls.  Layout positions them through the sheet
+protocol.  A native control does not hold output records.  Its items may
+still be Lisp objects, and a selection may run a command.
+
+An application pane is drawn by FitzCLIM.  It records output and holds
+presentations.  A command loop reads commands, from typing or from a gesture
+on a presentation, and runs them.
+
+A 3D pane is a native OpenGL child window, a sibling of the native controls.
+Pointer events at its edge become a ray.  A hit returns a Lisp object and
+enters the same command and translator machinery as a 2D presentation.  The
+OpenGL pane owns its redraw.  FitzCLIM may ask that pane to repaint.  The
+pane does not record its scene as output records.  A label in the scene is
+drawn and picked there.
+
+The 2D graphics protocol stays two-dimensional.  Regions, transforms,
+clipping, formatted output, and output recording are a plane.  They stay out
+of the scene graph.
+
+FitzCLIM was begun so that \textsc{Edefb}~\cite{edefb}, the Elite Dangerous
+Electronic Flight Bag, can have a \textsc{Clim}.  The toolkit is general.
+Other programs will use it too.  Elite Dangerous stays in the \textsc{Edefb}
+repository.
+
+This is a clean-room implementation.  It is not derived from McCLIM, from
+Franz \textsc{Clim}, or from LispWorks \textsc{Clim}.  The specification may
+be consulted.  Its text stays out of this tree.
+
+Tests use $\Sigma$~\cite{gore-sigma}, in particular the \texttt{behavior}
+and \texttt{should} forms in \texttt{sigma/behave}.
+
+The first frame manager targets Windows.  The geometry, ink, and sheet
+protocols live under \texttt{source/}.  Frames, gadgets, and the native
+frame manager are still to be written.
+
+You can download the library from GitHub at:\\
+\url{https://github.com/cgore/FitzCLIM}
+
+\section*{Getting Lisp}
+
+Before using this library you need a working Lisp.  I use and recommend
+\textsc{Sbcl}, Steel Bank Common Lisp, which is available at:\\
+\url{http://www.sbcl.org}
+
+\section*{Getting \textsc{Emacs} and \textsc{Slime}}
+
+The best way to interact with any Common Lisp is via \textsc{Slime}, the
+Superior Lisp Interaction Mode for \textsc{Emacs}.  It is available at:\\
+\url{https://common-lisp.net/project/slime/}

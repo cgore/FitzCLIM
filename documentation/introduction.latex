@@ -79,7 +79,9 @@ pane layout, and the Windows frame manager are under \texttt{source/}.
 An application pane records what it draws and finds the presentation
 under a pointer.  A frame can stack its panes.  A gadget holds a value
 or runs a callback.  On Windows the frame manager realizes that frame
-as a window and those gadgets as native controls.
+as a window and those gadgets as native controls.  Pointer and keyboard
+input on an application pane become CLIM events, and a paint replays
+the recorded output.
 
 You can download the library from GitHub at:\\
 \url{https://github.com/cgore/FitzCLIM}

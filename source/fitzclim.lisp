@@ -53,6 +53,7 @@
         :FitzCLIM/gadget
         :FitzCLIM/layout
         :FitzCLIM/formatted-output
+        :FitzCLIM/redisplay
         :FitzCLIM/opengl
         :FitzCLIM/windows))
 (in-package :FitzCLIM)
@@ -75,6 +76,7 @@
                    :FitzCLIM/gadget
                    :FitzCLIM/layout
                    :FitzCLIM/formatted-output
+                   :FitzCLIM/redisplay
                    :FitzCLIM/opengl
                    :FitzCLIM/windows))
   (do-external-symbols (symbol package)

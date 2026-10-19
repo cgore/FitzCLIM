@@ -133,6 +133,10 @@
       :depends-on ("output-record" "medium")
       :components
       ((:file "formatted-output")))
+     (:module "redisplay"
+      :depends-on ("output-record")
+      :components
+      ((:file "redisplay")))
      (:module "opengl"
       :depends-on ("sheet" "layout" "geometry" "presentation" "event")
       :components
@@ -148,4 +152,4 @@
       :depends-on ("geometry" "graphics" "sheet" "command" "frame"
                    "event" "presentation" "output-record" "medium"
                    "pane" "gadget" "layout" "formatted-output"
-                   "opengl" "windows"))))))
+                   "redisplay" "opengl" "windows"))))))

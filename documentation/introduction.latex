@@ -83,7 +83,9 @@ or runs a callback.  On Windows the frame manager realizes that frame
 as a window and those gadgets as native controls.  Pointer and keyboard
 input on an application pane become CLIM events, and a paint replays
 the recorded output.  On macOS the frame manager realizes the frame as
-a Cocoa window and the gadgets as Cocoa controls.
+a Cocoa window and the gadgets as Cocoa controls.  Pointer and keyboard
+input become CLIM events, and a menu of the frame's commands is installed
+in the menu bar.
 
 You can download the library from GitHub at:\\
 \url{https://github.com/cgore/FitzCLIM}

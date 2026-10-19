@@ -170,7 +170,9 @@
       :components
       ((:file "runtime")
        (:file "frames"
-        :depends-on ("runtime"))))
+        :depends-on ("runtime"))
+       (:file "events"
+        :depends-on ("frames"))))
      (:file "fitzclim"
       :depends-on ("geometry" "graphics" "sheet" "command" "frame"
                    "event" "presentation" "output-record" "medium"

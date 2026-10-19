@@ -523,13 +523,18 @@ children are parented to the frame's content view."))
         (setf (frame-port frame) (frame-manager-port manager))
         (push frame (frame-manager-frames manager))
         (handler-case
-            (realize-frame-sheets frame)
+            (progn
+              (realize-frame-sheets frame)
+              (when (fboundp 'install-cocoa-menu)
+                (funcall 'install-cocoa-menu frame)))
           (error (condition)
             (disown-frame manager frame)
             (error condition))))))
   frame)
 
 (defmethod disown-frame ((manager cocoa-frame-manager) (frame application-frame))
+  (when (fboundp 'forget-cocoa-menu)
+    (funcall 'forget-cocoa-menu frame))
   (with-cocoa ()
     (let ((top (frame-top-level-sheet frame)))
       (when top

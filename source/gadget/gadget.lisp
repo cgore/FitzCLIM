@@ -35,7 +35,9 @@
 (defpackage :FitzCLIM/gadget
   (:use :common-lisp
         :sigma/behave
-        :FitzCLIM/sheet)
+        :FitzCLIM/sheet
+        :FitzCLIM/geometry
+        :FitzCLIM/layout)
   (:export :action-gadget
            :activate-gadget
            :basic-gadget
@@ -83,7 +85,7 @@
        (funcall function gadget)))
     (t (error "~S is not a gadget callback." callback))))
 
-(defclass gadget (sheet-parent-mixin sheet-transformation-mixin)
+(defclass gadget (sheet-parent-mixin sheet-transformation-mixin sheet-layout-mixin)
   ((id
     :initarg :id
     :initform nil
@@ -404,6 +406,81 @@ value is true."))
           (unless (equal new old)
             (invoke-callback (gadget-value-changed-callback parent) parent)))))))
 
+(defmethod compose-space ((pane gadget) &key width height)
+  (declare (ignore width height))
+  (merge-user-space pane (make-space-requirement :width 80 :height 24)))
+
+(defmethod compose-space ((pane label-pane) &key width height)
+  (declare (ignore width height))
+  (merge-user-space pane (text-span (gadget-label pane)
+                                    :height 16
+                                    :max-width +fill+)))
+
+(defmethod compose-space ((pane push-button) &key width height)
+  (declare (ignore width height))
+  (merge-user-space pane (text-span (gadget-label pane)
+                                    :pad 16
+                                    :height 23
+                                    :min-width 75)))
+
+(defmethod compose-space ((pane toggle-button) &key width height)
+  (declare (ignore width height))
+  (merge-user-space pane (text-span (gadget-label pane)
+                                    :pad 24
+                                    :height 23
+                                    :min-width 75)))
+
+(defmethod compose-space ((pane slider) &key width height)
+  (declare (ignore width height))
+  (merge-user-space
+   pane
+   (if (eq (gadget-orientation pane) :vertical)
+       (make-space-requirement :width 20 :min-width 20 :max-width 20
+                               :height 120 :min-height 20 :max-height +fill+)
+       (make-space-requirement :width 120 :min-width 20 :max-width +fill+
+                               :height 20 :min-height 20 :max-height 20))))
+
+(defmethod compose-space ((pane text-field) &key width height)
+  (declare (ignore width height))
+  (merge-user-space pane (make-space-requirement :width 120 :min-width 20
+                                                 :max-width +fill+
+                                                 :height 23 :min-height 23
+                                                 :max-height 23)))
+
+(defmethod compose-space ((pane list-pane) &key width height)
+  (declare (ignore width height))
+  (merge-user-space pane (make-space-requirement :width 120 :min-width 20
+                                                 :max-width +fill+
+                                                 :height 80 :min-height 20
+                                                 :max-height +fill+)))
+
+(defmethod compose-space ((pane option-pane) &key width height)
+  (declare (ignore width height))
+  (merge-user-space pane (make-space-requirement :width 120 :min-width 20
+                                                 :max-width +fill+
+                                                 :height 23 :min-height 23
+                                                 :max-height 23)))
+
+(defmethod compose-space ((pane radio-box) &key width height)
+  (declare (ignore width height))
+  (compose-box-space pane (sheet-children pane) :vertical 0))
+
+(defmethod allocate-space ((pane radio-box) width height)
+  (allocate-box-space pane width height :vertical 0))
+
+(register-pane-class :check-box 'check-box)
+(register-pane-class :label 'label-pane)
+(register-pane-class :list 'list-pane)
+(register-pane-class :list-pane 'list-pane)
+(register-pane-class :option 'option-pane)
+(register-pane-class :option-pane 'option-pane)
+(register-pane-class :push-button 'push-button)
+(register-pane-class :radio-box 'radio-box)
+(register-pane-class :scroll-bar 'scroll-bar)
+(register-pane-class :slider 'slider)
+(register-pane-class :text-field 'text-field)
+(register-pane-class :toggle-button 'toggle-button)
+
 (behavior 'push-button
   (let* ((pressed nil)
          (button (make-instance 'push-button
@@ -488,3 +565,14 @@ value is true."))
       (should-be-false (gadget-value yes))
       (should-be-true (gadget-value no))
       (should-equal (list no) (gadget-value checks)))))
+
+(behavior 'radio-box-layout
+  (let* ((one (make-instance 'toggle-button :label "One" :width 40 :height 10))
+         (two (make-instance 'toggle-button :label "Two" :width 40 :height 12))
+         (box (make-instance 'radio-box)))
+    (adopt-sheet box one)
+    (adopt-sheet box two)
+    (allocate-space box 40 22)
+    (multiple-value-bind (x y) (transform-position (sheet-transformation two) 0 0)
+      (should= 0 x)
+      (should= 10 y))))

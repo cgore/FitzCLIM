@@ -35,18 +35,31 @@
 (defpackage :FitzCLIM/frame
   (:use :common-lisp
         :sigma/behave
-        :FitzCLIM/command)
+        :FitzCLIM/command
+        :FitzCLIM/geometry
+        :FitzCLIM/gadget
+        :FitzCLIM/sheet
+        :FitzCLIM/layout)
   (:export :*application-frame*
            :application-frame
            :default-frame-top-level
            :define-application-frame
            :execute-frame-command
+           :find-pane-named
            :frame-command-table
+           :frame-current-layout
            :frame-exit
+           :frame-height
+           :frame-layouts
            :frame-name
+           :frame-named-panes
+           :frame-panes
            :frame-pending-commands
            :frame-pretty-name
+           :frame-top-level-sheet
+           :frame-width
            :framep
+           :layout-frame
            :make-application-frame
            :read-frame-command
            :run-frame-top-level))
@@ -70,7 +83,37 @@
     :accessor frame-pending-commands
     :documentation "Commands waiting for READ-FRAME-COMMAND.  Each
     entry is a command name or a list of a name and arguments.  A frame
-    manager replaces this queue with input from the user."))
+    manager replaces this queue with input from the user.")
+   (named-panes
+    :initform nil
+    :accessor frame-named-panes
+    :documentation "An alist of pane names and panes.")
+   (layouts
+    :initform nil
+    :accessor frame-layouts
+    :documentation "An alist of layout names and functions that build them.")
+   (panes
+    :initform nil
+    :accessor frame-panes
+    :documentation "The sheet of the current layout.")
+   (top-level-sheet
+    :initform nil
+    :accessor frame-top-level-sheet
+    :documentation "The sheet that adopts the current layout.")
+   (current-layout
+    :initform nil
+    :reader frame-current-layout
+    :documentation "The name of the layout currently adopted.")
+   (width
+    :initarg :width
+    :initform 400
+    :accessor frame-width
+    :documentation "The width offered to the top-level sheet.")
+   (height
+    :initarg :height
+    :initform 300
+    :accessor frame-height
+    :documentation "The height offered to the top-level sheet."))
   (:documentation
    "An application.  Its command table supplies the commands the
    command loop runs."))
@@ -89,16 +132,48 @@ Each option is a list beginning with a keyword."
         (let ((spec (second option)))
           (if (symbolp spec)
               (values spec nil)
-              (values (first spec) (getf (rest spec) :inherit-from))))))))
+              (values (first spec) (getf (rest spec) :inherit-from)))))))
+
+(defun pane-name (spec)
+  "Return the symbol that names the pane SPEC."
+  (let ((name (first spec)))
+    (unless (and (symbolp name) (not (keywordp name)) (not (null name)))
+      (error "A pane name must be a symbol, not ~S." name))
+    name))
+
+(defun pane-maker-form (spec)
+  "Return the form that makes the pane SPEC."
+  (let ((body (rest spec)))
+    (unless body
+      (error "Pane ~S has no type." (first spec)))
+    (if (listp (first body))
+        (first body)
+        `(make-pane ,@body))))
+
+(defun layout-name (spec)
+  "Return the symbol that names the layout SPEC."
+  (let ((name (first spec)))
+    (unless (and (symbolp name) (not (keywordp name)) (not (null name)))
+      (error "A layout name must be a symbol, not ~S." name))
+    name))
+
+(defun layout-form (spec)
+  "Return the form that builds the layout SPEC."
+  (unless (and (rest spec) (listp (second spec)) (null (rest (rest spec))))
+    (error "A layout is a name and one form: ~S." spec))
+  (second spec)))
 
 (defmacro define-application-frame (name superclasses slots &rest options)
   "Define an application frame class and its command table.
 SUPERCLASSES default to APPLICATION-FRAME, which is added when it is
 missing.  :COMMAND-TABLE is a name, or (name :inherit-from (tables)).
-:PRETTY-NAME is the string shown for the frame.  The command table
-becomes *DEFAULT-COMMAND-TABLE* for later DEFINE-COMMAND forms."
+:PRETTY-NAME is the string shown for the frame.  :PANES and :LAYOUTS
+build the frame's sheets.  :GEOMETRY is a width and a height.  The
+command table becomes *DEFAULT-COMMAND-TABLE* for later DEFINE-COMMAND
+forms."
   (dolist (option options)
-    (unless (member (first option) '(:command-table :pretty-name))
+    (unless (member (first option)
+                    '(:command-table :pretty-name :panes :layouts :geometry))
       (error "The frame option ~S is not implemented yet." (first option))))
   (multiple-value-bind (table-name inherit-from)
       (parse-frame-command-table name options)
@@ -106,21 +181,102 @@ becomes *DEFAULT-COMMAND-TABLE* for later DEFINE-COMMAND forms."
            (pretty-option (assoc :pretty-name options))
            (pretty (if pretty-option
                        (second pretty-option)
-                       (string-capitalize (symbol-name name)))))
+                       (string-capitalize (symbol-name name))))
+           (panes (assoc :panes options))
+           (layouts (assoc :layouts options))
+           (geometry (assoc :geometry options)))
+      (when (or panes layouts)
+        (unless (and panes layouts)
+          (error "A frame with panes needs both :PANES and :LAYOUTS."))
+        (unless (rest panes)
+          (error ":PANES names at least one pane."))
+        (unless (rest layouts)
+          (error ":LAYOUTS names at least one layout.")))
+      (when geometry
+        (unless (and (= (length geometry) 3)
+                     (realp (second geometry))
+                     (realp (third geometry)))
+          (error ":GEOMETRY takes a width and a height.")))
       (unless (member 'application-frame supers)
         (setf supers (append supers '(application-frame))))
       (setf *default-command-table* table-name)
-      `(progn
-         (eval-when (:compile-toplevel :load-toplevel :execute)
-           (setf *default-command-table* ',table-name))
-         (define-command-table ,table-name :inherit-from ,inherit-from)
-         (defclass ,name ,supers
-           ,slots
-           (:default-initargs
-            :name ',name
-            :pretty-name ,pretty
-            :command-table (find-command-table ',table-name)))
-         ',name))))
+      (let ((initargs `(:name ',name
+                        :pretty-name ,pretty
+                        :command-table (find-command-table ',table-name)
+                        ,@(when geometry
+                            `(:width ,(second geometry)
+                              :height ,(third geometry)))))
+            (pane-method
+              (when panes
+                `(defmethod initialize-instance :after ((frame ,name) &key)
+                   (let* ,(mapcar (lambda (spec)
+                                    `(,(pane-name spec) ,(pane-maker-form spec)))
+                                  (rest panes))
+                     (setf (frame-named-panes frame)
+                           (list ,@(mapcar (lambda (spec)
+                                             `(cons ',(pane-name spec)
+                                                    ,(pane-name spec)))
+                                           (rest panes))))
+                     (setf (frame-layouts frame)
+                           (list ,@(mapcar (lambda (spec)
+                                             `(cons ',(layout-name spec)
+                                                    (lambda () ,(layout-form spec))))
+                                           (rest layouts))))
+                     (adopt-frame-layout frame
+                                         ',(layout-name (first (rest layouts))))
+                     (layout-frame frame))))))
+        `(progn
+           (eval-when (:compile-toplevel :load-toplevel :execute)
+             (setf *default-command-table* ',table-name))
+           (define-command-table ,table-name :inherit-from ,inherit-from)
+           (defclass ,name ,supers
+             ,slots
+             (:default-initargs ,@initargs))
+           ,@(when pane-method (list pane-method))
+           ',name)))))
+
+(defun find-pane-named (frame name &key (errorp t))
+  "Return the pane of FRAME named NAME."
+  (let ((pair (assoc name (frame-named-panes frame) :test #'eq)))
+    (cond (pair (cdr pair))
+          (errorp (error "The frame has no pane named ~S." name))
+          (t nil))))
+
+(defun adopt-frame-layout (frame name)
+  "Adopt the layout named NAME.  Named panes are detached first so a
+new layout can adopt the same sheets."
+  (let ((builder (cdr (assoc name (frame-layouts frame) :test #'eq))))
+    (unless builder
+      (error "The frame has no layout named ~S." name))
+    (let ((top (or (frame-top-level-sheet frame)
+                   (setf (frame-top-level-sheet frame)
+                         (make-instance 'single-child-sheet)))))
+      (when (sheet-children top)
+        (disown-sheet (first (sheet-children top))))
+      (dolist (pair (frame-named-panes frame))
+        (when (sheet-parent (cdr pair))
+          (disown-sheet (cdr pair))))
+      (adopt-sheet top (funcall builder))
+      (setf (slot-value frame 'current-layout) name)
+      (setf (frame-panes frame) (first (sheet-children top)))
+      (layout-frame frame)
+      name)))
+
+(defmethod (setf frame-current-layout) (name (frame application-frame))
+  (adopt-frame-layout frame name))
+
+(defun layout-frame (frame &key width height)
+  "Offer FRAME's top-level sheet WIDTH and HEIGHT and lay out its panes.
+Missing sizes use the frame's current width and height."
+  (let ((width (or width (frame-width frame)))
+        (height (or height (frame-height frame)))
+        (top (frame-top-level-sheet frame)))
+    (unless top
+      (error "The frame has no panes."))
+    (setf (frame-width frame) width
+          (frame-height frame) height)
+    (allocate-space top width height)
+    frame))
 
 (defun make-application-frame (name &rest initargs &key &allow-other-keys)
   "Return a new frame of class NAME."
@@ -204,4 +360,53 @@ runs.  Return FRAME."
        (error () t))))
   (let ((child (make-application-frame 'adder-child-frame)))
     (should= 4 (execute-frame-command child '(com-plus 4)))
-    (should= 4 (adder-total child))))
+    (should= 4 (adder-total child)))
+  (should-be-null (frame-panes (make-application-frame 'adder-frame)))
+  (should-be-true
+   (handler-case
+       (progn
+         (macroexpand-1 '(define-application-frame bad-option-frame () ()
+                          (:menu nil)))
+         nil)
+     (error () t)))
+  (should-be-true
+   (handler-case
+       (progn
+         (macroexpand-1 '(define-application-frame bad-panes-frame () ()
+                          (:panes (ok :push-button))))
+         nil)
+     (error () t))))
+
+(define-application-frame stacked-frame ()
+  ()
+  (:panes
+   (banner :label :label "Title" :width 80 :height 16)
+   (ok :push-button :label "OK" :width 80 :height 20))
+  (:layouts
+   (default (vertically (:spacing 4) banner ok))
+   (side-by-side (horizontally (:spacing 4) banner ok)))
+  (:geometry 200 100))
+
+(behavior 'frame-panes
+  (let ((frame (make-application-frame 'stacked-frame)))
+    (should-eq 'default (frame-current-layout frame))
+    (should= 200 (frame-width frame))
+    (should= 100 (frame-height frame))
+    (let ((ok (find-pane-named frame 'ok)))
+      (should-equal "OK" (gadget-label ok))
+      (multiple-value-bind (x y) (transform-position (sheet-transformation ok) 0 0)
+        (should= 0 x)
+        (should= 20 y))
+      (setf (frame-current-layout frame) 'side-by-side)
+      (should-eq ok (find-pane-named frame 'ok))
+      (multiple-value-bind (x y) (transform-position (sheet-transformation ok) 0 0)
+        (should= 84 x)
+        (should= 0 y)))
+    (should-be-true
+     (handler-case
+         (progn (setf (frame-current-layout frame) 'missing) nil)
+       (error () t)))
+    (should-be-true
+     (handler-case
+         (progn (find-pane-named frame 'missing) nil)
+       (error () t)))))

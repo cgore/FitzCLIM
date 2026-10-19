@@ -40,13 +40,14 @@
         :FitzCLIM/frame
         :FitzCLIM/medium
         :FitzCLIM/output-record
-        :FitzCLIM/presentation)
+        :FitzCLIM/presentation
+        :FitzCLIM/layout)
   (:export :application-pane
            :find-innermost-applicable-presentation
            :presentation-at-position))
 (in-package :FitzCLIM/pane)
 
-(defclass application-pane (leaf-sheet output-recording-stream)
+(defclass application-pane (leaf-sheet output-recording-stream sheet-layout-mixin)
   ()
   (:documentation
    "A sheet that records output and holds presentations.  A pointer
@@ -131,3 +132,16 @@ NIL for CONTEXT-TYPE skips the translator check."
         (draw-point* pane 40 40)))
     (should-equal "outer"
                   (presentation-object (presentation-at-position pane 40 40)))))
+
+(defmethod compose-space ((pane application-pane) &key width height)
+  (declare (ignore width height))
+  (merge-user-space pane (make-space-requirement :width 200 :min-width 20 :max-width +fill+
+                                                 :height 150 :min-height 20 :max-height +fill+)))
+
+(register-pane-class :application 'application-pane)
+
+(behavior 'application-pane-space
+  (let ((pane (make-pane :application :width 30 :max-width +fill+)))
+    (should= 30 (space-requirement-width (compose-space pane)))
+    (should= 150 (space-requirement-height (compose-space pane)))
+    (should= +fill+ (space-requirement-max-width (compose-space pane)))))

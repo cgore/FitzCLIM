@@ -91,7 +91,7 @@
        (:file "define-command"
         :depends-on ("command-table"))))
      (:module "frame"
-      :depends-on ("command")
+      :depends-on ("command" "geometry" "sheet" "gadget" "layout")
       :components
       ((:file "frame")))
      (:module "event"
@@ -117,15 +117,19 @@
       ((:file "medium")
        (:file "drawing"
         :depends-on ("medium"))))
+     (:module "layout"
+      :depends-on ("geometry" "sheet")
+      :components
+      ((:file "layout")))
      (:module "pane"
-      :depends-on ("sheet" "medium" "presentation")
+      :depends-on ("sheet" "medium" "presentation" "layout")
       :components
       ((:file "pane")))
      (:module "gadget"
-      :depends-on ("sheet")
+      :depends-on ("geometry" "sheet" "layout")
       :components
       ((:file "gadget")))
      (:file "fitzclim"
       :depends-on ("geometry" "graphics" "sheet" "command" "frame"
                    "event" "presentation" "output-record" "medium"
-                   "pane" "gadget"))))))
+                   "pane" "gadget" "layout"))))))

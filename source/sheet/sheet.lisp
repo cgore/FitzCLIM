@@ -44,6 +44,12 @@
            :graft-p
            :leaf-sheet
            :map-over-sheets
+           :pane-height-hint
+           :pane-max-height-hint
+           :pane-max-width-hint
+           :pane-min-height-hint
+           :pane-min-width-hint
+           :pane-width-hint
            :raise-sheet
            :reorder-sheets
            :sheet
@@ -55,6 +61,7 @@
            :sheet-enabled-p
            :sheet-graft
            :sheet-identity-transformation-mixin
+           :sheet-layout-mixin
            :sheet-leaf-mixin
            :sheet-multiple-child-mixin
            :sheet-parent
@@ -86,6 +93,37 @@
 (defun sheetp (object)
   "Return true if OBJECT is a sheet."
   (typep object 'sheet))
+
+(defclass sheet-layout-mixin ()
+  ((width-hint
+    :initarg :width
+    :initform nil
+    :reader pane-width-hint
+    :documentation "A requested width, or NIL to let the layout decide.")
+   (min-width-hint
+    :initarg :min-width
+    :initform nil
+    :reader pane-min-width-hint)
+   (max-width-hint
+    :initarg :max-width
+    :initform nil
+    :reader pane-max-width-hint)
+   (height-hint
+    :initarg :height
+    :initform nil
+    :reader pane-height-hint
+    :documentation "A requested height, or NIL to let the layout decide.")
+   (min-height-hint
+    :initarg :min-height
+    :initform nil
+    :reader pane-min-height-hint)
+   (max-height-hint
+    :initarg :max-height
+    :initform nil
+    :reader pane-max-height-hint))
+  (:documentation
+   "Size hints.  A requested width or height is fixed unless a minimum
+or a maximum is given too."))
 
 (defmethod (setf sheet-region) :before (region (sheet sheet))
   (check-type region region))

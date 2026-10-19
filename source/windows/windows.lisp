@@ -197,6 +197,17 @@ so a Lisp range is scaled onto 0 through 1000.")
   (message (unsigned 32))
   (wparam (unsigned 64))
   (lparam (signed 64)))
+(define-alien-routine ("CreateMenu" create-menu) system-area-pointer)
+(define-alien-routine ("AppendMenuW" append-menu-w) (signed 32)
+  (menu system-area-pointer)
+  (flags (unsigned 32))
+  (id (unsigned 64))
+  (text system-area-pointer))
+(define-alien-routine ("SetMenu" set-menu) (signed 32)
+  (hwnd system-area-pointer)
+  (menu system-area-pointer))
+(define-alien-routine ("GetMenu" get-menu) system-area-pointer
+  (hwnd system-area-pointer))
 (define-alien-routine ("MoveWindow" move-window) (signed 32)
   (hwnd system-area-pointer)
   (x (signed 32))
@@ -777,9 +788,58 @@ A notification from that control must not write the value back.")
            (funcall function gadget)))
         (t (error "~S is not a gadget callback." callback))))))
 
+(defvar *menu-commands* (make-hash-table)
+  "A table from a menu item id to a frame and a command name.")
+
+(defvar *frame-menu-ids* (make-hash-table :test #'eq)
+  "A table from a frame to the ids of its menu items.")
+
+(defvar *next-menu-id* #xefff
+  "The last menu item id handed out.  Ids stay in the high half of a
+16-bit value so they do not collide with control ids.")
+
+(defun queue-menu-command (id)
+  "Queue the command named by menu item ID, when this port owns it."
+  (let ((entry (gethash id *menu-commands*)))
+    (when entry
+      (destructuring-bind (frame . name) entry
+        (setf (frame-pending-commands frame)
+              (append (frame-pending-commands frame) (list name)))))))
+
+(defun install-frame-menu (frame)
+  "Give FRAME a menu bar of the commands that have a menu string.
+A frame with no such commands keeps no menu."
+  (let ((items (remove-if-not #'stringp (command-table-menu (frame-command-table frame))
+                              :key #'first)))
+    (when items
+      (let ((menu (create-menu))
+            (ids nil))
+        (unless (plusp (sb-sys:sap-int menu))
+          (error "CreateMenu failed (error ~D)." (get-last-error)))
+        (dolist (item items)
+          (let ((id (incf *next-menu-id*)))
+            (with-utf16 (text (first item))
+              (unless (plusp (append-menu-w menu 0 id (alien-sap text)))
+                (error "AppendMenuW failed (error ~D)." (get-last-error))))
+            (setf (gethash id *menu-commands*) (cons frame (second item)))
+            (push id ids)))
+        (unless (plusp (set-menu (hwnd-sap (frame-hwnd frame)) menu))
+          (error "SetMenu failed (error ~D)." (get-last-error)))
+        (setf (gethash frame *frame-menu-ids*) (nreverse ids))))))
+
+(defun forget-frame-menu (frame)
+  "Drop FRAME's menu item ids.  DestroyWindow destroys the menu bar."
+  (dolist (id (gethash frame *frame-menu-ids*))
+    (remhash id *menu-commands*))
+  (remhash frame *frame-menu-ids*))
+
 (defun handle-command (wparam lparam)
-  "Apply a WM_COMMAND notification from the control at LPARAM."
-  (when (plusp lparam)
+  "Apply a WM_COMMAND notification.
+A zero LPARAM is a menu item.  A control sends its HWND as LPARAM."
+  (cond
+    ((and (zerop lparam) (zerop (hiword wparam)))
+     (queue-menu-command (loword wparam)))
+    ((plusp lparam)
     (let ((sheet (mirror-sheet lparam))
           (code (hiword wparam)))
       (when (and sheet (not (eq *mirror-silent* sheet)))
@@ -800,7 +860,7 @@ A notification from that control must not write the value back.")
              (setf (gadget-value sheet) (read-selection sheet))))
           ((and (typep sheet 'option-pane) (= code +cbn-selchange+))
            (let ((*mirror-silent* sheet))
-             (setf (gadget-value sheet) (read-selection sheet)))))))))
+             (setf (gadget-value sheet) (read-selection sheet))))))))))
 
 (defun scroll-position (gadget code wparam)
   "Return the scrollbar position GADGET should take for this notification."
@@ -1604,13 +1664,16 @@ message was dispatched.  This does not wait."))
       (setf (gethash frame *frame-ports*) (frame-manager-port manager))
       (push frame (frame-manager-frames manager))
       (handler-case
-          (realize-frame-sheets frame)
+          (progn
+            (realize-frame-sheets frame)
+            (install-frame-menu frame))
         (error (condition)
           (disown-frame manager frame)
           (error condition)))))
   frame)
 
 (defmethod disown-frame ((manager windows-frame-manager) (frame application-frame))
+  (forget-frame-menu frame)
   (let ((top (frame-top-level-sheet frame)))
     (when top
       (when (fboundp 'release-opengl-pane)
@@ -2100,5 +2163,48 @@ queue is empty."
              (when *window-proc-error*
                (error "The window procedure failed: ~A" *window-proc-error*))
              (disown-frame manager frame)))
+      (when (member frame (frame-manager-frames manager) :test #'eq)
+        (disown-frame manager frame)))))
+
+(define-application-frame windows-menu-frame ()
+  ((total
+    :initform 0
+    :accessor menu-total))
+  (:pretty-name "Windows Menu")
+  (:panes
+   (canvas :application :width 40 :height 20))
+  (:layouts
+   (default (progn canvas)))
+  (:geometry 40 20))
+
+(define-command (com-menu-add :command-table windows-menu-frame
+                              :name t :menu "Add")
+    ()
+  "Add one to the frame total and return the new total."
+  (incf (menu-total *application-frame*)))
+
+(define-command (com-menu-hidden :command-table windows-menu-frame :name t)
+    ()
+  "Return the frame total.  This command is not on the menu."
+  (menu-total *application-frame*))
+
+(behavior 'windows-command-menu
+  (setf *window-proc-error* nil)
+  (let ((manager (make-windows-frame-manager))
+        (frame (make-application-frame 'windows-menu-frame)))
+    (unwind-protect
+         (progn
+           (adopt-frame manager frame)
+           (let ((menu (get-menu (hwnd-sap (frame-hwnd frame))))
+                 (ids (gethash frame *frame-menu-ids*)))
+             (should-be-true (plusp (sb-sys:sap-int menu)))
+             (should= 1 (length ids))
+             (send-message (frame-hwnd frame) +wm-command+ (first ids) 0))
+           (should-eq frame (run-frame-top-level frame))
+           (should= 1 (menu-total frame))
+           (when *window-proc-error*
+             (error "The window procedure failed: ~A" *window-proc-error*))
+           (disown-frame manager frame)
+           (should-be-null (gethash frame *frame-menu-ids*)))
       (when (member frame (frame-manager-frames manager) :test #'eq)
         (disown-frame manager frame)))))

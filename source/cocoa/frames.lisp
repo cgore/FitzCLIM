@@ -32,7 +32,66 @@
 ;;;; ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 ;;;; POSSIBILITY OF SUCH DAMAGE.
 
-(in-package :FitzCLIM/cocoa)
+(defpackage :FitzCLIM/cocoa/frames
+  (:use :common-lisp
+        :sigma/behave
+        :sb-alien
+        :FitzCLIM/command
+        :FitzCLIM/frame
+        :FitzCLIM/pane
+        :FitzCLIM/gadget
+        :FitzCLIM/event
+        :FitzCLIM/sheet
+        :FitzCLIM/geometry
+        :FitzCLIM/layout
+        :FitzCLIM/medium
+        :FitzCLIM/output-record
+        :FitzCLIM/graphics/design
+        :FitzCLIM/graphics/color
+        :FitzCLIM/graphics/opacity
+        :FitzCLIM/graphics/line-style
+        :FitzCLIM/graphics/text-style
+        :FitzCLIM/opengl
+        :FitzCLIM/presentation
+        :FitzCLIM/port)
+  (:import-from :FitzCLIM/cocoa
+                :*id-id*
+                :*ulong-ulong*
+                :*void-id*
+                :*void-id-bool*
+                :add-method-once
+                :ensure-cocoa-application
+                :ensure-cocoa-classes
+                :fitz-make-view
+                :fitz-make-window
+                :fitz-poll-send
+                :fitz-post-wakeup
+                :fitz-set-content-size
+                :fitz-set-frame
+                :fitz-view-frame
+                :live-sap?
+                :mirror-sap
+                :ns-string
+                :ns-text
+                :objc-get-bool
+                :objc-get-class
+                :objc-get-double
+                :objc-get-id
+                :objc-get-long
+                :objc-id
+                :objc-new
+                :objc-set-bool
+                :objc-set-double
+                :objc-set-id
+                :objc-set-long
+                :objc-set-ulong
+                :objc-void
+                :selector
+                :with-cocoa)
+  (:export :cocoa-frame-manager
+           :cocoa-port
+           :make-cocoa-frame-manager))
+(in-package :FitzCLIM/cocoa/frames)
 
 (defvar *cocoa-error* nil
   "The last error from a Cocoa callback, or NIL.")
@@ -500,6 +559,14 @@ children are parented to the frame's content view."))
     (objc-set-id window "setContentView:" content)
     content))
 
+(defun cocoa-events-function (name)
+  "Return the function named NAME in the Cocoa events package, or NIL."
+  (let ((package (find-package :fitzclim/cocoa/events)))
+    (when package
+      (let ((symbol (find-symbol name package)))
+        (when (and symbol (fboundp symbol))
+          (symbol-function symbol))))))
+
 (defmethod adopt-frame ((manager cocoa-frame-manager) (frame application-frame))
   (ensure-cocoa-application)
   (ensure-target-methods)
@@ -525,16 +592,18 @@ children are parented to the frame's content view."))
         (handler-case
             (progn
               (realize-frame-sheets frame)
-              (when (fboundp 'install-cocoa-menu)
-                (funcall 'install-cocoa-menu frame)))
+              (let ((install (cocoa-events-function "INSTALL-COCOA-MENU")))
+                (when install
+                  (funcall install frame))))
           (error (condition)
             (disown-frame manager frame)
             (error condition))))))
   frame)
 
 (defmethod disown-frame ((manager cocoa-frame-manager) (frame application-frame))
-  (when (fboundp 'forget-cocoa-menu)
-    (funcall 'forget-cocoa-menu frame))
+  (let ((forget (cocoa-events-function "FORGET-COCOA-MENU")))
+    (when forget
+      (funcall forget frame)))
   (with-cocoa ()
     (let ((top (frame-top-level-sheet frame)))
       (when top

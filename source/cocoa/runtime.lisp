@@ -53,10 +53,7 @@
         :FitzCLIM/graphics/text-style
         :FitzCLIM/opengl
         :FitzCLIM/presentation
-        :FitzCLIM/port)
-  (:export :cocoa-frame-manager
-           :cocoa-port
-           :make-cocoa-frame-manager))
+        :FitzCLIM/port))
 (in-package :FitzCLIM/cocoa)
 
 (defvar *cocoa-libraries-loaded* nil

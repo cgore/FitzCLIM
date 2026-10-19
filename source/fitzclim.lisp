@@ -59,7 +59,8 @@
         :FitzCLIM/opengl
         :FitzCLIM/port
         #+win32 :FitzCLIM/windows
-        #+darwin :FitzCLIM/cocoa))
+        #+darwin :FitzCLIM/cocoa
+        #+darwin :FitzCLIM/cocoa/frames))
 (in-package :FitzCLIM)
 
 (dolist (package '(:FitzCLIM/geometry
@@ -86,7 +87,8 @@
                    :FitzCLIM/opengl
                    :FitzCLIM/port
                    #+win32 :FitzCLIM/windows
-                   #+darwin :FitzCLIM/cocoa))
+                   #+darwin :FitzCLIM/cocoa
+                   #+darwin :FitzCLIM/cocoa/frames))
   (do-external-symbols (symbol package)
     (export symbol)))
 

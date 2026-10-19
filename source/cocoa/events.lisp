@@ -32,7 +32,60 @@
 ;;;; ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 ;;;; POSSIBILITY OF SUCH DAMAGE.
 
-(in-package :FitzCLIM/cocoa)
+(defpackage :FitzCLIM/cocoa/events
+  (:use :common-lisp
+        :sigma/behave
+        :sb-alien
+        :FitzCLIM/command
+        :FitzCLIM/frame
+        :FitzCLIM/pane
+        :FitzCLIM/gadget
+        :FitzCLIM/event
+        :FitzCLIM/sheet
+        :FitzCLIM/geometry
+        :FitzCLIM/layout
+        :FitzCLIM/medium
+        :FitzCLIM/output-record
+        :FitzCLIM/graphics/design
+        :FitzCLIM/graphics/color
+        :FitzCLIM/graphics/opacity
+        :FitzCLIM/graphics/line-style
+        :FitzCLIM/graphics/text-style
+        :FitzCLIM/opengl
+        :FitzCLIM/presentation
+        :FitzCLIM/port)
+  (:import-from :FitzCLIM/cocoa
+                :*cocoa-application*
+                :*id-id*
+                :*id-long*
+                :add-method-once
+                :ensure-cocoa-classes
+                :fitz-event-char
+                :fitz-event-key-code
+                :fitz-event-modifiers
+                :fitz-event-point
+                :fitz-event-type
+                :fitz-send-key
+                :fitz-send-mouse
+                :live-sap?
+                :mirror-sap
+                :ns-string
+                :ns-text
+                :objc-get-class
+                :objc-get-id
+                :objc-get-long
+                :objc-id
+                :objc-new
+                :objc-set-bool
+                :objc-set-id
+                :objc-set-long
+                :objc-void
+                :selector
+                :with-cocoa)
+  (:import-from :FitzCLIM/cocoa/frames
+                :*cocoa-error*
+                :make-cocoa-frame-manager))
+(in-package :FitzCLIM/cocoa/events)
 
 (defvar *cocoa-modifiers* 0
   "The modifier bits held by keys that are still down.")

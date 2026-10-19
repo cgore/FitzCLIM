@@ -39,6 +39,7 @@
         :FitzCLIM/frame
         :FitzCLIM/pane
         :FitzCLIM/gadget
+        :FitzCLIM/event
         :FitzCLIM/sheet
         :FitzCLIM/geometry
         :FitzCLIM/layout)
@@ -80,9 +81,21 @@
 (defparameter +sw-hide+ 0)
 (defparameter +sw-showna+ 8)
 (defparameter +wm-paint+ #x000F)
+(defparameter +wm-keydown+ #x0100)
+(defparameter +wm-keyup+ #x0101)
+(defparameter +wm-char+ #x0102)
 (defparameter +wm-command+ #x0111)
 (defparameter +wm-hscroll+ #x0114)
 (defparameter +wm-vscroll+ #x0115)
+(defparameter +wm-mousemove+ #x0200)
+(defparameter +wm-lbuttondown+ #x0201)
+(defparameter +wm-lbuttonup+ #x0202)
+(defparameter +wm-rbuttondown+ #x0204)
+(defparameter +wm-rbuttonup+ #x0205)
+(defparameter +wm-mbuttondown+ #x0207)
+(defparameter +wm-mbuttonup+ #x0208)
+(defparameter +mk-shift+ 4)
+(defparameter +mk-control+ 8)
 (defparameter +bm-getcheck+ #x00F0)
 (defparameter +bm-setcheck+ #x00F1)
 (defparameter +bm-click+ #x00F5)
@@ -304,6 +317,15 @@ A notification from that control must not write the value back.")
 
 (defvar *window-proc-error* nil
   "The last error caught in the window procedure, or NIL.")
+
+(defvar *frame-ports* (make-hash-table :test #'eq)
+  "A table from a frame to the port that adopted it.")
+
+(defvar *port-events* (make-hash-table :test #'eq)
+  "A table from a port to the CLIM events waiting to be read.")
+
+(defvar *windows-modifier-state* 0
+  "Modifier bits held down, tracked from key messages.")
 
 (defvar *control-classes* nil
   "An alist of window-class keywords and their permanent UTF-16 names.")
@@ -673,6 +695,129 @@ A notification from that control must not write the value back.")
            (end-paint (hwnd-sap hwnd) sap))
       (free-alien paint))))
 
+(defun enqueue-event (sheet event)
+  "Queue EVENT for the port that realized SHEET."
+  (let* ((root (mirror-root sheet))
+         (frame (and root (gethash (sheet-mirror root) *mirror-frames*)))
+         (port (and frame (gethash frame *frame-ports*))))
+    (when port
+      (setf (gethash port *port-events*)
+            (append (gethash port *port-events*) (list event))))
+    event))
+
+(defun port-next-event (port)
+  "Return the next CLIM event queued for PORT, or NIL."
+  (let ((queue (gethash port *port-events*)))
+    (setf (gethash port *port-events*) (rest queue))
+    (first queue)))
+
+(defun pointer-modifier-state (wparam)
+  "Return the modifier bits for a pointer message."
+  (logior *windows-modifier-state*
+          (if (plusp (logand wparam +mk-shift+)) +shift-key+ 0)
+          (if (plusp (logand wparam +mk-control+)) +control-key+ 0)))
+
+(defun enqueue-pointer (sheet class x y modifiers &optional button)
+  "Queue a pointer event aimed at SHEET."
+  (enqueue-event sheet
+                 (if button
+                     (make-instance class
+                                    :sheet sheet
+                                    :x x
+                                    :y y
+                                    :modifier-state modifiers
+                                    :button button)
+                     (make-instance class
+                                    :sheet sheet
+                                    :x x
+                                    :y y
+                                    :modifier-state modifiers))))
+
+(defun handle-pointer (hwnd message wparam lparam)
+  "Queue a pointer event for a mouse message."
+  (let ((sheet (mirror-sheet hwnd)))
+    (when sheet
+      (let ((x (loword lparam))
+            (y (hiword lparam))
+            (modifiers (pointer-modifier-state wparam)))
+        (cond
+          ((= message +wm-mousemove+)
+           (enqueue-pointer sheet 'pointer-motion-event x y modifiers))
+          ((= message +wm-lbuttondown+)
+           (enqueue-pointer sheet 'pointer-button-press-event x y modifiers :left))
+          ((= message +wm-lbuttonup+)
+           (enqueue-pointer sheet 'pointer-button-release-event x y modifiers :left))
+          ((= message +wm-rbuttondown+)
+           (enqueue-pointer sheet 'pointer-button-press-event x y modifiers :right))
+          ((= message +wm-rbuttonup+)
+           (enqueue-pointer sheet 'pointer-button-release-event x y modifiers :right))
+          ((= message +wm-mbuttondown+)
+           (enqueue-pointer sheet 'pointer-button-press-event x y modifiers :middle))
+          ((= message +wm-mbuttonup+)
+           (enqueue-pointer sheet 'pointer-button-release-event x y modifiers :middle)))))))
+
+(defun virtual-key-name (code)
+  "Return the CLIM key name for a Windows virtual-key code, or NIL."
+  (cond
+    ((= code #x08) :backspace)
+    ((= code #x09) :tab)
+    ((= code #x0d) :return)
+    ((= code #x1b) :escape)
+    ((= code #x10) :shift)
+    ((= code #x11) :control)
+    ((= code #x12) :meta)
+    ((= code #x21) :page-up)
+    ((= code #x22) :page-down)
+    ((= code #x23) :end)
+    ((= code #x24) :home)
+    ((= code #x25) :left)
+    ((= code #x26) :up)
+    ((= code #x27) :right)
+    ((= code #x28) :down)
+    ((= code #x2e) :delete)
+    ((<= #x70 code #x7b)
+     (intern (format nil "F~D" (1+ (- code #x70))) :keyword))
+    ((<= 65 code 90)
+     (intern (string (code-char code)) :keyword))
+    (t nil)))
+
+(defun modifier-bit (key-name)
+  "Return the modifier bit KEY-NAME holds down, or 0."
+  (case key-name
+    (:shift +shift-key+)
+    (:control +control-key+)
+    (:meta +meta-key+)
+    (t 0)))
+
+(defun note-key (sheet class code character)
+  "Queue a keyboard event and keep the modifier bits up to date."
+  (let* ((name (if character nil (virtual-key-name code)))
+         (bit (modifier-bit name))
+         (state (logior *windows-modifier-state* bit)))
+    (enqueue-event sheet
+                   (make-instance class
+                                  :sheet sheet
+                                  :key-name name
+                                  :character character
+                                  :modifier-state state))
+    (cond
+      ((and (plusp bit) (eq class 'key-press-event))
+       (setf *windows-modifier-state* state))
+      ((and (plusp bit) (eq class 'key-release-event))
+       (setf *windows-modifier-state* (logandc2 *windows-modifier-state* bit))))))
+
+(defun handle-key (hwnd message wparam)
+  "Queue a keyboard event for a key message."
+  (let ((sheet (mirror-sheet hwnd)))
+    (when sheet
+      (cond
+        ((= message +wm-char+)
+         (note-key sheet 'key-press-event nil (code-char wparam)))
+        ((= message +wm-keydown+)
+         (note-key sheet 'key-press-event wparam nil))
+        ((= message +wm-keyup+)
+         (note-key sheet 'key-release-event wparam nil))))))
+
 (defun handle-message (hwnd message wparam lparam)
   "Handle one message for HWND.  Return a result when this port handles it."
   (cond
@@ -681,6 +826,15 @@ A notification from that control must not write the value back.")
      (values t 0))
     ((or (= message +wm-hscroll+) (= message +wm-vscroll+))
      (handle-scroll lparam wparam)
+     (values t 0))
+    ((or (= message +wm-mousemove+)
+         (= message +wm-lbuttondown+) (= message +wm-lbuttonup+)
+         (= message +wm-rbuttondown+) (= message +wm-rbuttonup+)
+         (= message +wm-mbuttondown+) (= message +wm-mbuttonup+))
+     (handle-pointer hwnd message wparam lparam)
+     (values t 0))
+    ((or (= message +wm-keydown+) (= message +wm-keyup+) (= message +wm-char+))
+     (handle-key hwnd message wparam)
      (values t 0))
     ((and (= message +wm-paint+)
           (typep (mirror-sheet hwnd) 'application-pane))
@@ -867,6 +1021,7 @@ message was dispatched.  This does not wait."))
                                                  +ws-ex-noactivate+))))
       (remember-mirror top (sb-sys:sap-int hwnd))
       (setf (gethash (sb-sys:sap-int hwnd) *mirror-frames*) frame)
+      (setf (gethash frame *frame-ports*) (frame-manager-port manager))
       (push frame (frame-manager-frames manager))
       (handler-case
           (realize-frame-sheets frame)
@@ -887,6 +1042,7 @@ message was dispatched.  This does not wait."))
       (map-over-sheets #'forget-mirror top)))
   (setf (frame-manager-frames manager)
         (remove frame (frame-manager-frames manager) :test #'eq))
+  (remhash frame *frame-ports*)
   frame)
 
 (defun frame-hwnd (frame)
@@ -906,16 +1062,25 @@ message was dispatched.  This does not wait."))
   (show-window (hwnd-sap (frame-hwnd frame)) +sw-hide+)
   frame)
 
+(define-alien-type win-msg
+  (struct win-msg
+    (hwnd system-area-pointer)
+    (message (unsigned 32))
+    (padding1 (unsigned 32))
+    (wparam (unsigned 64))
+    (lparam (signed 64))
+    (time (unsigned 32))
+    (x (signed 32))
+    (y (signed 32))
+    (padding2 (unsigned 32))))
+
 (defmethod process-next-event ((port windows-port) &key wait-function timeout)
   (declare (ignore port wait-function timeout))
-  (let* ((message (make-alien (unsigned 8) 8))
-         (sap (alien-sap message)))
-    (unwind-protect
-         (when (plusp (peek-message-w sap (sb-sys:int-sap 0) 0 0 +pm-remove+))
-           (translate-message sap)
-           (dispatch-message-w sap)
-           t)
-      (free-alien message))))
+  (with-alien ((message win-msg))
+    (let ((sap (alien-sap (addr message))))
+      (when (plusp (peek-message-w sap (sb-sys:int-sap 0) 0 0 +pm-remove+))
+        (dispatch-message-w sap)
+        t))))
 
 (defmethod (setf gadget-value) :after
     (value (gadget text-field) &key invoke-callback)
@@ -1124,5 +1289,81 @@ message was dispatched.  This does not wait."))
                (should= 0 (is-window (hwnd-sap hwnd)))
                (should-be-null (sheet-mirror top))
                (should-be-null (frame-manager-frames manager)))))
+      (when (member frame (frame-manager-frames manager) :test #'eq)
+        (disown-frame manager frame)))))
+
+(define-application-frame windows-event-frame ()
+  ()
+  (:pretty-name "Windows Events")
+  (:panes
+   (canvas :application :width 80 :height 60))
+  (:layouts
+   (default (progn canvas)))
+  (:geometry 80 60))
+
+(behavior 'windows-events
+  (setf *window-proc-error* nil)
+  (setf *windows-modifier-state* 0)
+  (let ((manager (make-windows-frame-manager))
+        (frame (make-application-frame 'windows-event-frame)))
+    (unwind-protect
+         (progn
+           (adopt-frame manager frame)
+           (let ((canvas (find-pane-named frame 'canvas))
+                 (port (frame-manager-port manager)))
+             (send-message (sheet-mirror canvas) +wm-lbuttondown+
+                           0 (logior 3 (ash 4 16)))
+             (let ((event (port-next-event port)))
+               (should-be-true (typep event 'pointer-button-press-event))
+               (should-eq canvas (event-sheet event))
+               (should= 3 (pointer-event-x event))
+               (should= 4 (pointer-event-y event))
+               (should-eq :left (pointer-event-button event))
+               (should= 0 (event-modifier-state event))
+               (should-be-true (event-matches-gesture-name-p event :select)))
+             (send-message (sheet-mirror canvas) +wm-lbuttondown+
+                           +mk-shift+ (logior 1 (ash 2 16)))
+             (should= +shift-key+
+                      (event-modifier-state (port-next-event port)))
+             (send-message (sheet-mirror canvas) +wm-rbuttonup+
+                           0 (logior 5 (ash 6 16)))
+             (let ((event (port-next-event port)))
+               (should-be-true (typep event 'pointer-button-release-event))
+               (should-eq :right (pointer-event-button event))
+               (should= 5 (pointer-event-x event)))
+             (send-message (sheet-mirror canvas) +wm-mbuttondown+ 0 0)
+             (should-eq :middle
+                        (pointer-event-button (port-next-event port)))
+             (send-message (sheet-mirror canvas) +wm-mousemove+
+                           0 (logior 7 (ash 8 16)))
+             (let ((event (port-next-event port)))
+               (should-be-true (typep event 'pointer-motion-event))
+               (should= 7 (pointer-event-x event))
+               (should= 8 (pointer-event-y event)))
+             (send-message (sheet-mirror canvas) +wm-keydown+ #x25 0)
+             (let ((event (port-next-event port)))
+               (should-be-true (typep event 'key-press-event))
+               (should-eq :left (keyboard-event-key-name event))
+               (should-be-null (keyboard-event-character event))
+               (should-eq canvas (event-sheet event)))
+             (send-message (sheet-mirror canvas) +wm-char+ 65 0)
+             (should-eq #\A
+                        (keyboard-event-character (port-next-event port)))
+             (send-message (sheet-mirror canvas) +wm-keydown+ #x10 0)
+             (send-message (sheet-mirror canvas) +wm-keydown+ 66 0)
+             (let ((shift (port-next-event port))
+                   (letter (port-next-event port)))
+               (should-eq :shift (keyboard-event-key-name shift))
+               (should= +shift-key+ (event-modifier-state letter))
+               (should-eq :b (keyboard-event-key-name letter)))
+             (send-message (sheet-mirror canvas) +wm-keyup+ #x10 0)
+             (let ((event (port-next-event port)))
+               (should-be-true (typep event 'key-release-event))
+               (should-eq :shift (keyboard-event-key-name event))
+               (should= 0 *windows-modifier-state*))
+             (should-be-null (port-next-event port))
+             (when *window-proc-error*
+               (error "The window procedure failed: ~A" *window-proc-error*))
+             (disown-frame manager frame)))
       (when (member frame (frame-manager-frames manager) :test #'eq)
         (disown-frame manager frame)))))

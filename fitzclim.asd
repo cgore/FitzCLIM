@@ -121,7 +121,11 @@
       :depends-on ("sheet" "medium" "presentation")
       :components
       ((:file "pane")))
+     (:module "gadget"
+      :depends-on ("sheet")
+      :components
+      ((:file "gadget")))
      (:file "fitzclim"
       :depends-on ("geometry" "graphics" "sheet" "command" "frame"
                    "event" "presentation" "output-record" "medium"
-                   "pane"))))))
+                   "pane" "gadget"))))))

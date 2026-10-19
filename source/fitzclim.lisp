@@ -49,7 +49,8 @@
         :FitzCLIM/presentation
         :FitzCLIM/output-record
         :FitzCLIM/medium
-        :FitzCLIM/pane))
+        :FitzCLIM/pane
+        :FitzCLIM/gadget))
 (in-package :FitzCLIM)
 
 (dolist (package '(:FitzCLIM/geometry
@@ -66,7 +67,8 @@
                    :FitzCLIM/presentation
                    :FitzCLIM/output-record
                    :FitzCLIM/medium
-                   :FitzCLIM/pane))
+                   :FitzCLIM/pane
+                   :FitzCLIM/gadget))
   (do-external-symbols (symbol package)
     (export symbol)))
 
@@ -94,7 +96,8 @@
                                          :button :left)))
   (should-be-true (output-record-p (make-instance 'standard-tree-output-history)))
   (should-be-true (mediump (make-instance 'basic-medium)))
-  (should-be-true (sheetp (make-instance 'application-pane))))
+  (should-be-true (sheetp (make-instance 'application-pane)))
+  (should-be-true (gadgetp (make-instance 'push-button))))
 
 (behavior 'make-command-table
   (let ((table (make-command-table 'fitzclim-reexport-tests :errorp nil)))

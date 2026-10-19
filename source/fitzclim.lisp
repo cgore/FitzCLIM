@@ -42,7 +42,9 @@
         :FitzCLIM/graphics/compose
         :FitzCLIM/graphics/line-style
         :FitzCLIM/graphics/text-style
-        :FitzCLIM/sheet))
+        :FitzCLIM/sheet
+        :FitzCLIM/command
+        :FitzCLIM/frame))
 (in-package :FitzCLIM)
 
 (dolist (package '(:FitzCLIM/geometry
@@ -52,7 +54,9 @@
                    :FitzCLIM/graphics/compose
                    :FitzCLIM/graphics/line-style
                    :FitzCLIM/graphics/text-style
-                   :FitzCLIM/sheet))
+                   :FitzCLIM/sheet
+                   :FitzCLIM/command
+                   :FitzCLIM/frame))
   (do-external-symbols (symbol package)
     (export symbol)))
 
@@ -73,3 +77,12 @@
         (child (make-instance 'basic-sheet)))
     (adopt-sheet parent child)
     (should-eq parent (sheet-parent child))))
+
+(behavior 'make-command-table
+  (let ((table (make-command-table 'fitzclim-reexport-tests :errorp nil)))
+    (should-be-true (command-table-p table))
+    (should-be-true
+     (framep (make-instance 'application-frame
+                            :name 'reexport
+                            :pretty-name "Reexport"
+                            :command-table table)))))

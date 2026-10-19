@@ -85,5 +85,14 @@
       :depends-on ("geometry")
       :components
       ((:file "sheet")))
+     (:module "command"
+      :components
+      ((:file "command-table")
+       (:file "define-command"
+        :depends-on ("command-table"))))
+     (:module "frame"
+      :depends-on ("command")
+      :components
+      ((:file "frame")))
      (:file "fitzclim"
-      :depends-on ("geometry" "graphics" "sheet"))))))
+      :depends-on ("geometry" "graphics" "sheet" "command" "frame"))))))

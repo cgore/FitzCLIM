@@ -129,6 +129,10 @@
       :depends-on ("geometry" "sheet" "layout")
       :components
       ((:file "gadget")))
+     (:module "formatted-output"
+      :depends-on ("output-record" "medium")
+      :components
+      ((:file "formatted-output")))
      (:module "opengl"
       :depends-on ("sheet" "layout" "geometry" "presentation" "event")
       :components
@@ -143,4 +147,5 @@
      (:file "fitzclim"
       :depends-on ("geometry" "graphics" "sheet" "command" "frame"
                    "event" "presentation" "output-record" "medium"
-                   "pane" "gadget" "layout" "opengl" "windows"))))))
+                   "pane" "gadget" "layout" "formatted-output"
+                   "opengl" "windows"))))))

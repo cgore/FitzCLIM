@@ -115,6 +115,7 @@
            :stream-cursor-y
            :stream-drawing-p
            :stream-ink
+           :stream-left-margin
            :stream-line-style
            :stream-medium
            :stream-output-history
@@ -875,6 +876,10 @@ drawn at, before alignment."))
    (cursor-y
     :initform 0
     :accessor stream-cursor-y)
+   (left-margin
+    :initform 0
+    :accessor stream-left-margin
+    :documentation "The x terpri returns to.  Indenting output raises it.")
    (ink
     :initform +foreground-ink+
     :accessor stream-ink)
@@ -960,7 +965,7 @@ The cursor is in the root record's coordinates."))
   (add-output-record record (stream-current-output-record stream)))
 
 (defmethod sb-gray:stream-terpri ((stream output-recording-stream))
-  (setf (stream-cursor-x stream) 0)
+  (setf (stream-cursor-x stream) (stream-left-margin stream))
   (incf (stream-cursor-y stream) (text-line-height (stream-text-style stream)))
   nil)
 

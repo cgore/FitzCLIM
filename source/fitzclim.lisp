@@ -52,6 +52,7 @@
         :FitzCLIM/pane
         :FitzCLIM/gadget
         :FitzCLIM/layout
+        :FitzCLIM/opengl
         :FitzCLIM/windows))
 (in-package :FitzCLIM)
 
@@ -72,6 +73,7 @@
                    :FitzCLIM/pane
                    :FitzCLIM/gadget
                    :FitzCLIM/layout
+                   :FitzCLIM/opengl
                    :FitzCLIM/windows))
   (do-external-symbols (symbol package)
     (export symbol)))

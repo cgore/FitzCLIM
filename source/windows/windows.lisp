@@ -49,7 +49,9 @@
         :FitzCLIM/graphics/color
         :FitzCLIM/graphics/opacity
         :FitzCLIM/graphics/line-style
-        :FitzCLIM/graphics/text-style)
+        :FitzCLIM/graphics/text-style
+        :FitzCLIM/opengl
+        :FitzCLIM/presentation)
   (:export :adopt-frame
            :disable-frame
            :disown-frame
@@ -103,6 +105,7 @@
 (defparameter +wm-mbuttondown+ #x0207)
 (defparameter +wm-mbuttonup+ #x0208)
 (defparameter +wm-printclient+ #x0318)
+(defparameter +cs-owndc+ #x0020)
 (defparameter +ps-solid+ 0)
 (defparameter +ps-dash+ 1)
 (defparameter +null-brush+ 5)
@@ -191,7 +194,7 @@ so a Lisp range is scaled onto 0 through 1000.")
 (define-alien-routine ("SendMessageW" send-message-w) (signed 64)
   (hwnd system-area-pointer)
   (message (unsigned 32))
-  (wparam (signed 64))
+  (wparam (unsigned 64))
   (lparam (signed 64)))
 (define-alien-routine ("MoveWindow" move-window) (signed 32)
   (hwnd system-area-pointer)
@@ -558,7 +561,8 @@ A notification from that control must not write the value back.")
                        (:combobox "COMBOBOX")
                        (:scrollbar "SCROLLBAR")
                        (:frame "FitzCLIMFrame")
-                       (:pane "FitzCLIMPane")))))
+                       (:pane "FitzCLIMPane")
+                       (:opengl "FitzCLIMOpenGL")))))
          (push (cons kind alien) *control-classes*)
          alien))))
 
@@ -573,6 +577,7 @@ A notification from that control must not write the value back.")
     (list-pane :listbox)
     (option-pane :combobox)
     (application-pane :pane)
+    (opengl-pane :opengl)
     (t nil)))
 
 (defun button-style (sheet)
@@ -603,6 +608,7 @@ A notification from that control must not write the value back.")
             (list-pane (logior +ws-tabstop+ #x01 #x40 #x100 #x200000
                                (if (eq (gadget-mode sheet) :some-of) #x08 0)))
             (option-pane (logior +ws-tabstop+ #x03 #x200 #x200000))
+            (opengl-pane +ws-clipchildren+)
             (t 0))
           (if (and (gadgetp sheet) (not (gadget-active-p sheet)))
               +ws-disabled+
@@ -1401,6 +1407,11 @@ DRAWER is called with the device context and a COLORREF."
           (typep (mirror-sheet hwnd) 'application-pane))
      (paint-pane hwnd)
      (values t 0))
+    ((and (= message +wm-paint+)
+          (typep (mirror-sheet hwnd) 'opengl-pane))
+     (when (fboundp 'paint-opengl-pane)
+       (funcall 'paint-opengl-pane hwnd))
+     (values t 0))
     (t (values nil 0))))
 
 (define-alien-callable fitzclim-window-proc (signed 64)
@@ -1419,13 +1430,13 @@ DRAWER is called with the device context and a COLORREF."
         (setf *window-proc-error* condition)
         (def-window-proc-w hwnd message wparam lparam)))))
 
-(defun register-window-class (kind background)
+(defun register-window-class (kind background &optional (style 0))
   "Register KIND when Windows does not already have that class."
   (let ((class (make-alien wndclassexw)))
     (unwind-protect
          (progn
            (setf (slot class 'cb-size) (alien-size wndclassexw :bytes)
-                 (slot class 'style) 0
+                 (slot class 'style) style
                  (slot class 'proc)
                  (alien-sap (alien-callable-function 'fitzclim-window-proc))
                  (slot class 'cls-extra) 0
@@ -1452,6 +1463,7 @@ DRAWER is called with the device context and a COLORREF."
              (alien-size wndclassexw :bytes)))
     (register-window-class :frame 16)
     (register-window-class :pane 6)
+    (register-window-class :opengl 0 +cs-owndc+)
     (setf *windows-classes-ready* t)))
 
 (defun place-mirror (sheet)
@@ -1490,12 +1502,16 @@ DRAWER is called with the device context and a COLORREF."
           (remember-mirror sheet (sb-sys:sap-int hwnd))
           (when (typep sheet 'application-pane)
             (ensure-gdi-medium sheet))
+          (when (and (typep sheet 'opengl-pane) (fboundp 'realize-opengl-pane))
+            (funcall 'realize-opengl-pane sheet))
           (refresh-mirror sheet))))))
 
 (defun destroy-mirrors (sheet)
   "Destroy the native windows of SHEET and its descendants."
   (map-over-sheets
    (lambda (descendant)
+     (when (and (typep descendant 'opengl-pane) (fboundp 'release-opengl-pane))
+       (funcall 'release-opengl-pane descendant))
      (let ((hwnd (sheet-mirror descendant)))
        (when hwnd
          (let ((sap (hwnd-sap hwnd)))
@@ -1596,6 +1612,12 @@ message was dispatched.  This does not wait."))
 (defmethod disown-frame ((manager windows-frame-manager) (frame application-frame))
   (let ((top (frame-top-level-sheet frame)))
     (when top
+      (when (fboundp 'release-opengl-pane)
+        (map-over-sheets
+         (lambda (descendant)
+           (when (typep descendant 'opengl-pane)
+             (funcall 'release-opengl-pane descendant)))
+         top))
       (let ((hwnd (sheet-mirror top)))
         (when hwnd
           (let ((sap (hwnd-sap hwnd)))

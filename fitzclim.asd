@@ -129,12 +129,18 @@
       :depends-on ("geometry" "sheet" "layout")
       :components
       ((:file "gadget")))
+     (:module "opengl"
+      :depends-on ("sheet" "layout" "geometry" "presentation" "event")
+      :components
+      ((:file "opengl")))
      (:module "windows"
       :depends-on ("frame" "pane" "gadget" "event" "sheet" "geometry"
-                   "medium" "output-record" "graphics")
+                   "medium" "output-record" "graphics" "opengl")
       :components
-      ((:file "windows")))
+      ((:file "windows")
+       (:file "gl"
+        :depends-on ("windows"))))
      (:file "fitzclim"
       :depends-on ("geometry" "graphics" "sheet" "command" "frame"
                    "event" "presentation" "output-record" "medium"
-                   "pane" "gadget" "layout" "windows"))))))
+                   "pane" "gadget" "layout" "opengl" "windows"))))))

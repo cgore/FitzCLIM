@@ -286,6 +286,12 @@ character.  Signal SIMPLE-PARSE-ERROR at the end of the stream."
     (push object (gethash (presentation-type-name type)
                           *presentation-type-histories*))))
 
+(defvar *accepting-values-acceptor* nil
+  "When set, ACCEPT calls this function instead of reading.
+The function receives the type, stream, default, default type, prompt,
+and query identifier.  It returns the object and its type.
+ACCEPTING-VALUES binds it.")
+
 (defun accept (type &key (stream *standard-input*)
                       (view +textual-view+)
                       (default nil)
@@ -302,15 +308,21 @@ character.  Signal SIMPLE-PARSE-ERROR at the end of the stream."
                       additional-delimiter-gestures)
   "Read an object of TYPE from STREAM.  Return the object and its type.
 End of input with PROVIDE-DEFAULT true returns DEFAULT and
-DEFAULT-TYPE.  The keyword arguments besides STREAM, VIEW, DEFAULT,
-DEFAULT-TYPE, and PROVIDE-DEFAULT are accepted for callers and are
-used when a frame manager runs the input editor."
-  (declare (ignore insert-default prompt prompt-mode display-default
-                   query-identifier activation-gestures
-                   additional-activation-gestures delimiter-gestures
-                   additional-delimiter-gestures))
+DEFAULT-TYPE.  While ACCEPTING-VALUES is running, the query's stored
+value is returned instead.  The remaining keywords are accepted for
+callers and are used when a frame manager runs the input editor."
+  (declare (ignore insert-default prompt-mode display-default
+                   activation-gestures additional-activation-gestures
+                   delimiter-gestures additional-delimiter-gestures))
   (unless (presentation-type-specifier-p type)
     (error "~S is not a presentation type." type))
+  (when *accepting-values-acceptor*
+    (multiple-value-bind (object object-type)
+        (funcall *accepting-values-acceptor*
+                 type stream default default-type prompt query-identifier)
+      (let ((result-type (or object-type type)))
+        (remember-presentation type object)
+        (return-from accept (values object result-type)))))
   (when (and provide-default (null (peek-char t stream nil nil)))
     (return-from accept (values default default-type)))
   (multiple-value-bind (object object-type)

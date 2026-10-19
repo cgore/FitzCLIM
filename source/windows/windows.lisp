@@ -52,16 +52,9 @@
         :FitzCLIM/graphics/line-style
         :FitzCLIM/graphics/text-style
         :FitzCLIM/opengl
-        :FitzCLIM/presentation)
-  (:export :adopt-frame
-           :disable-frame
-           :disown-frame
-           :enable-frame
-           :frame-manager-frames
-           :frame-manager-port
-           :make-windows-frame-manager
-           :process-next-event
-           :sheet-mirror
+        :FitzCLIM/presentation
+        :FitzCLIM/port)
+  (:export :make-windows-frame-manager
            :windows-frame-manager
            :windows-port))
 (in-package :FitzCLIM/windows)
@@ -449,27 +442,8 @@ unless the string must outlive the call."
   "Send MESSAGE to HWND and return the result."
   (send-message-w (hwnd-sap hwnd) message wparam lparam))
 
-(defvar *sheet-mirrors* (make-hash-table :test #'eq)
-  "A table from a sheet to its HWND integer.")
-
-(defvar *mirror-sheets* (make-hash-table :test #'eql)
-  "A table from an HWND integer to its sheet.")
-
-(defvar *mirror-frames* (make-hash-table :test #'eql)
-  "A table from a top-level HWND integer to its frame.")
-
-(defvar *mirror-silent* nil
-  "The sheet whose native control is already showing the Lisp value.
-A notification from that control must not write the value back.")
-
 (defvar *window-proc-error* nil
   "The last error caught in the window procedure, or NIL.")
-
-(defvar *frame-ports* (make-hash-table :test #'eq)
-  "A table from a frame to the port that adopted it.")
-
-(defvar *port-events* (make-hash-table :test #'eq)
-  "A table from a port to the CLIM events waiting to be read.")
 
 (defvar *windows-modifier-state* 0
   "Modifier bits held down, tracked from key messages.")
@@ -479,31 +453,6 @@ A notification from that control must not write the value back.")
 
 (defvar *windows-classes-ready* nil
   "True after FitzCLIMFrame and FitzCLIMPane have been registered.")
-
-(defun sheet-mirror (sheet)
-  "Return the HWND integer of SHEET, or NIL when it has no native window."
-  (gethash sheet *sheet-mirrors*))
-
-(behavior 'sheet-mirror
-  (should-be-null (sheet-mirror (make-instance 'push-button))))
-
-(defun mirror-sheet (hwnd)
-  "Return the sheet that owns HWND, or NIL."
-  (gethash hwnd *mirror-sheets*))
-
-(defun remember-mirror (sheet hwnd)
-  "Record that SHEET is realized as HWND."
-  (setf (gethash sheet *sheet-mirrors*) hwnd)
-  (setf (gethash hwnd *mirror-sheets*) sheet)
-  hwnd)
-
-(defun forget-mirror (sheet)
-  "Drop SHEET's HWND.  The window itself is left alone."
-  (let ((hwnd (sheet-mirror sheet)))
-    (when hwnd
-      (remhash hwnd *mirror-sheets*)
-      (remhash sheet *sheet-mirrors*)))
-  nil)
 
 (defun loword (value)
   "Return the low 16 bits of VALUE."
@@ -517,34 +466,6 @@ A notification from that control must not write the value back.")
   (should= 4 (loword (logior 4 (ash 500 16))))
   (should= 500 (hiword (logior 4 (ash 500 16))))
   (should= #x0300 (hiword (ash #x0300 16))))
-
-(defun mirror-root (sheet)
-  "Return the top-level sheet of SHEET when that sheet has an HWND."
-  (loop for current = sheet then (sheet-parent current)
-        while current
-        do (when (and (null (sheet-parent current))
-                      (sheet-mirror current))
-             (return current))))
-
-(defun sheet-in-root (sheet root)
-  "Return the origin of SHEET in ROOT's coordinates."
-  (let ((x 0)
-        (y 0)
-        (current sheet))
-    (loop
-      (when (or (null current) (eq current root))
-        (return (values (round x) (round y))))
-      (multiple-value-bind (next-x next-y)
-          (transform-position (sheet-transformation current) x y)
-        (setf x next-x
-              y next-y
-              current (sheet-parent current))))))
-
-(defun sheet-pixel-size (sheet)
-  "Return the width and height of SHEET's region, in pixels."
-  (let ((region (sheet-region sheet)))
-    (values (max 1 (round (bounding-rectangle-width region)))
-            (max 1 (round (bounding-rectangle-height region))))))
 
 (defun window-screen-position (hwnd)
   "Return the screen coordinates of HWND's outer origin."
@@ -1318,22 +1239,6 @@ DRAWER is called with the device context and a COLORREF."
                                        (< (logand (ash value -8) #xff) 40)
                                        (< (logand (ash value -16) #xff) 40)))))))
 
-(defun enqueue-event (sheet event)
-  "Queue EVENT for the port that realized SHEET."
-  (let* ((root (mirror-root sheet))
-         (frame (and root (gethash (sheet-mirror root) *mirror-frames*)))
-         (port (and frame (gethash frame *frame-ports*))))
-    (when port
-      (setf (gethash port *port-events*)
-            (append (gethash port *port-events*) (list event))))
-    event))
-
-(defun port-next-event (port)
-  "Return the next CLIM event queued for PORT, or NIL."
-  (let ((queue (gethash port *port-events*)))
-    (setf (gethash port *port-events*) (rest queue))
-    (first queue)))
-
 (defun pointer-modifier-state (wparam)
   "Return the modifier bits for a pointer message."
   (logior *windows-modifier-state*
@@ -1598,19 +1503,12 @@ DRAWER is called with the device context and a COLORREF."
     (map-over-sheets (lambda (sheet) (realize-sheet sheet root)) root)
     (map-over-sheets #'place-mirror root)))
 
-(defclass windows-port ()
+(defclass windows-port (port)
   ()
   (:documentation "The Windows port.  Its message queue is the thread's."))
 
-(defclass windows-frame-manager ()
-  ((port
-    :initarg :port
-    :reader frame-manager-port
-    :documentation "The port that owns this manager's windows.")
-   (frames
-    :initform nil
-    :accessor frame-manager-frames
-    :documentation "The frames this manager is currently showing."))
+(defclass windows-frame-manager (frame-manager)
+  ()
   (:documentation
    "A frame manager that realizes frames as Windows windows and gadgets
 as native controls.  Layout panes have no window of their own.  Their
@@ -1620,28 +1518,15 @@ children are parented to the frame window."))
   "Return a frame manager that realizes frames on Windows."
   (make-instance 'windows-frame-manager :port (make-instance 'windows-port)))
 
+(setf *frame-manager-maker* #'make-windows-frame-manager)
+
 (behavior 'make-windows-frame-manager
   (let ((manager (make-windows-frame-manager)))
     (should-be-true (typep manager 'windows-frame-manager))
     (should-be-true (typep (frame-manager-port manager) 'windows-port))
-    (should-be-null (frame-manager-frames manager))))
-
-(defgeneric adopt-frame (frame-manager frame)
-  (:documentation "Realize FRAME on FRAME-MANAGER."))
-
-(defgeneric disown-frame (frame-manager frame)
-  (:documentation "Destroy FRAME's native windows."))
-
-(defgeneric enable-frame (frame-manager frame)
-  (:documentation "Show FRAME."))
-
-(defgeneric disable-frame (frame-manager frame)
-  (:documentation "Hide FRAME."))
-
-(defgeneric process-next-event (port &key wait-function timeout)
-  (:documentation
-   "Dispatch one queued Windows message for PORT.  Return true when a
-message was dispatched.  This does not wait."))
+    (should-be-true (typep (frame-manager-port manager) 'port))
+    (should-be-null (frame-manager-frames manager))
+    (should-eq #'make-windows-frame-manager *frame-manager-maker*)))
 
 (defmethod adopt-frame ((manager windows-frame-manager) (frame application-frame))
   (ensure-window-classes)
@@ -1660,8 +1545,8 @@ message was dispatched.  This does not wait."))
                                :ex-style (logior +ws-ex-toolwindow+
                                                  +ws-ex-noactivate+))))
       (remember-mirror top (sb-sys:sap-int hwnd))
-      (setf (gethash (sb-sys:sap-int hwnd) *mirror-frames*) frame)
-      (setf (gethash frame *frame-ports*) (frame-manager-port manager))
+      (setf (mirror-frame (sb-sys:sap-int hwnd)) frame)
+      (setf (frame-port frame) (frame-manager-port manager))
       (push frame (frame-manager-frames manager))
       (handler-case
           (progn
@@ -1687,11 +1572,11 @@ message was dispatched.  This does not wait."))
           (let ((sap (hwnd-sap hwnd)))
             (when (plusp (is-window sap))
               (destroy-window sap)))
-          (remhash hwnd *mirror-frames*)))
+          (forget-mirror-frame hwnd)))
       (map-over-sheets #'forget-mirror top)))
   (setf (frame-manager-frames manager)
         (remove frame (frame-manager-frames manager) :test #'eq))
-  (remhash frame *frame-ports*)
+  (forget-frame-port frame)
   frame)
 
 (defun frame-hwnd (frame)
@@ -1724,6 +1609,7 @@ message was dispatched.  This does not wait."))
     (padding2 (unsigned 32))))
 
 (defmethod process-next-event ((port windows-port) &key wait-function timeout)
+  "Dispatch one queued Windows message.  This does not wait."
   (declare (ignore port wait-function timeout))
   (with-alien ((message win-msg))
     (let ((sap (alien-sap (addr message))))
@@ -2065,49 +1951,6 @@ message was dispatched.  This does not wait."))
              (disown-frame manager frame)))
       (when (member frame (frame-manager-frames manager) :test #'eq)
         (disown-frame manager frame)))))
-
-(defun presentation-under-pointer (event)
-  "Return the presentation under a pointer press, or NIL.
-An application pane is searched through its output history.  An OpenGL
-pane is searched through its scene."
-  (let ((sheet (event-sheet event))
-        (x (pointer-event-x event))
-        (y (pointer-event-y event)))
-    (cond
-      ((typep sheet 'application-pane)
-       (presentation-at-position sheet x y))
-      ((typep sheet 'opengl-pane)
-       (opengl-presentation-at-position sheet x y)))))
-
-(defun command-from-pointer-event (frame event)
-  "Return the command a pointer press on FRAME produces, or NIL."
-  (when (typep event 'pointer-button-press-event)
-    (let ((presentation (presentation-under-pointer event))
-          (sheet (event-sheet event)))
-      (when presentation
-        (command-from-presentation presentation event
-                                   (frame-command-table frame)
-                                   :frame frame
-                                   :window sheet
-                                   :x (pointer-event-x event)
-                                   :y (pointer-event-y event))))))
-
-(defun read-windows-frame-command (frame)
-  "Return the next command a pointer press on FRAME produces, or NIL.
-Posted Windows messages are dispatched first.  Motion, releases, and
-presses that name no command are skipped.  NIL means this frame's port
-queue is empty."
-  (let ((port (gethash frame *frame-ports*)))
-    (when port
-      (loop repeat 32
-            while (process-next-event port))
-      (loop for event = (port-next-event port)
-            while event
-            for command = (command-from-pointer-event frame event)
-            when command
-              return command))))
-
-(setf *frame-event-reader* #'read-windows-frame-command)
 
 (define-application-frame windows-pick-frame ()
   ((word

@@ -149,8 +149,14 @@
       :depends-on ("sheet" "layout" "geometry" "presentation" "event")
       :components
       ((:file "opengl")))
+     (:module "port"
+      :depends-on ("sheet" "geometry" "frame" "event" "presentation"
+                   "opengl" "pane")
+      :components
+      ((:file "port")))
      (:module "windows"
-      :depends-on ("command" "frame" "pane" "gadget" "event" "sheet"
+      :if-feature :win32
+      :depends-on ("port" "command" "frame" "pane" "gadget" "event" "sheet"
                    "geometry" "medium" "output-record" "graphics" "opengl")
       :components
       ((:file "windows")
@@ -161,4 +167,5 @@
                    "event" "presentation" "output-record" "medium"
                    "pane" "gadget" "layout" "formatted-output"
                    "redisplay" "input-editor" "dialog" "opengl"
-                   "windows"))))))
+                   "port"
+                   #+win32 "windows"))))))

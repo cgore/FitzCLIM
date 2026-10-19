@@ -57,7 +57,8 @@
         :FitzCLIM/input-editor
         :FitzCLIM/dialog
         :FitzCLIM/opengl
-        :FitzCLIM/windows))
+        :FitzCLIM/port
+        #+win32 :FitzCLIM/windows))
 (in-package :FitzCLIM)
 
 (dolist (package '(:FitzCLIM/geometry
@@ -82,7 +83,8 @@
                    :FitzCLIM/input-editor
                    :FitzCLIM/dialog
                    :FitzCLIM/opengl
-                   :FitzCLIM/windows))
+                   :FitzCLIM/port
+                   #+win32 :FitzCLIM/windows))
   (do-external-symbols (symbol package)
     (export symbol)))
 
@@ -113,7 +115,19 @@
   (should-be-true (sheetp (make-instance 'application-pane)))
   (should-be-true (gadgetp (make-instance 'push-button)))
   (should-be-true (space-requirement-p (make-space-requirement :width 3 :height 4)))
-  (should-be-true (typep (make-windows-frame-manager) 'windows-frame-manager)))
+  (should-eq #'read-port-frame-command *frame-event-reader*)
+  #+win32
+  (let ((manager (make-frame-manager)))
+    (should-be-true (typep manager 'windows-frame-manager))
+    (should-be-true (typep (frame-manager-port manager) 'port)))
+  #-win32
+  (handler-case
+      (progn
+        (make-frame-manager)
+        (should-be-true nil))
+    (error (condition)
+      (should-equal "FitzCLIM has no frame manager for this host."
+                    (princ-to-string condition)))))
 
 (behavior 'make-command-table
   (let ((table (make-command-table 'fitzclim-reexport-tests :errorp nil)))

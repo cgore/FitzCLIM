@@ -36,7 +36,9 @@
   (:use :common-lisp
         :sigma/behave
         :FitzCLIM/command
-        :FitzCLIM/presentation)
+        :FitzCLIM/command/define-command
+        :FitzCLIM/presentation
+        :FitzCLIM/presentation/present)
   (:export :accepting-values
            :menu-choose
            :menu-choose-from-command-table))

@@ -35,7 +35,8 @@
 (defpackage :FitzCLIM/input-editor
   (:use :common-lisp
         :sigma/behave
-        :FitzCLIM/presentation)
+        :FitzCLIM/presentation
+        :FitzCLIM/presentation/present)
   (:export :input-editing-stream
            :invoke-with-input-editing
            :with-input-editing))

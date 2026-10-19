@@ -32,7 +32,53 @@
 ;;;; ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 ;;;; POSSIBILITY OF SUCH DAMAGE.
 
-(in-package :FitzCLIM/presentation)
+(defpackage :FitzCLIM/presentation/present
+  (:use :common-lisp
+        :sigma/behave
+        :FitzCLIM/command
+        :FitzCLIM/frame
+        :FitzCLIM/event
+        :FitzCLIM/output-record
+        :FitzCLIM/presentation)
+  (:import-from :FitzCLIM/presentation
+                :expression
+                :find-presentation-type-class
+                :invoke-presentation-method
+                :presentation-type-class-history
+                :widget)
+  (:export :*accept-input-editor*
+           :*accepting-values-acceptor*
+           :*input-context*
+           :*pointer-documentation-view*
+           :+gadget-view+
+           :+pointer-documentation-view+
+           :+textual-dialog-view+
+           :+textual-view+
+           :accept
+           :accept-from-string
+           :gadget-view
+           :input-context-type
+           :make-presentation
+           :pointer-documentation-view
+           :present
+           :present-to-string
+           :presentation
+           :presentation-modifier
+           :presentation-object
+           :presentation-single-box
+           :presentation-type
+           :presentation-type-history
+           :presentation-type-of
+           :presentation-view
+           :presentationp
+           :standard-presentation
+           :textual-dialog-view
+           :textual-view
+           :view
+           :viewp
+           :with-input-context
+           :with-output-as-presentation))
+(in-package :FitzCLIM/presentation/present)
 
 (defclass view ()
   ()

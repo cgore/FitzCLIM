@@ -39,69 +39,21 @@
         :FitzCLIM/frame
         :FitzCLIM/event
         :FitzCLIM/output-record)
-  (:export :*accept-input-editor*
-           :*accepting-values-acceptor*
-           :*input-context*
-           :*pointer-documentation-view*
-           :+gadget-view+
-           :+pointer-documentation-view+
-           :+textual-dialog-view+
-           :+textual-view+
-           :accept
-           :accept-frame-command
-           :accept-from-string
-           :blank-area
-           :call-presentation-translator
-           :command-from-presentation
-           :define-presentation-action
+  (:intern :expression
+           :widget)
+  (:export :blank-area
            :define-presentation-method
-           :define-presentation-to-command-translator
-           :define-presentation-translator
            :define-presentation-type
            :describe-presentation-type
-           :document-presentation-translator
-           :execute-presentation-gesture
            :expand-presentation-type-abbreviation
-           :find-applicable-translators
-           :gadget-view
-           :input-context-type
-           :make-presentation
            :map-over-presentation-type-supertypes
-           :pointer-documentation-view
-           :present
-           :present-to-string
-           :presentation
-           :presentation-modifier
-           :presentation-object
-           :presentation-single-box
-           :presentation-translator
-           :presentation-translator-documentation
-           :presentation-translator-from-type
-           :presentation-translator-gesture
-           :presentation-translator-menu
-           :presentation-translator-name
-           :presentation-translator-priority
-           :presentation-translator-to-type
-           :presentation-type
-           :presentation-type-history
+           :presentation-subtypep
            :presentation-type-name
-           :presentation-type-of
            :presentation-type-option
            :presentation-type-parameter
            :presentation-type-specifier-p
            :presentation-typep
-           :presentation-subtypep
-           :presentation-view
-           :presentationp
-           :simple-parse-error
-           :standard-presentation
-           :textual-dialog-view
-           :textual-view
-           :throw-highlighted-presentation
-           :view
-           :viewp
-           :with-input-context
-           :with-output-as-presentation))
+           :simple-parse-error))
 (in-package :FitzCLIM/presentation)
 
 (define-condition simple-parse-error (parse-error)
@@ -280,13 +232,22 @@ A supertype equal to TYPE is treated as no supertype, so a cycle stops."
                              (presentation-types-match? super type))))
           super)))))
 
+(defun presentation-method-name (name)
+  "Return the symbol that names a presentation method.
+NAME is a symbol.  The result is interned in this package, so a caller
+in another package selects the same method."
+  (intern (symbol-name name) :fitzclim/presentation))
+
 (defun register-presentation-method (method-name type-name function)
   "Store FUNCTION as METHOD-NAME for the presentation type TYPE-NAME."
-  (setf (gethash (cons method-name type-name) *presentation-methods*) function))
+  (setf (gethash (cons (presentation-method-name method-name) type-name)
+                 *presentation-methods*)
+        function))
 
 (defun find-presentation-method (method-name type-name)
   "Return the METHOD-NAME function for TYPE-NAME, or NIL."
-  (gethash (cons method-name type-name) *presentation-methods*))
+  (gethash (cons (presentation-method-name method-name) type-name)
+           *presentation-methods*))
 
 (defun method-bindings (type-var type-name body)
   "Wrap BODY in bindings for the parameters and options of TYPE-NAME."
@@ -350,10 +311,11 @@ accepted objects."
 (defmacro define-presentation-method (method-name arglist &body body)
   "Define a presentation method.
 METHOD-NAME is PRESENTATION-TYPEP, PRESENT, ACCEPT,
-PRESENTATION-SUBTYPEP, or DESCRIBE-PRESENTATION-TYPE.  One argument is
-(variable type-name).  The type's parameters and options are bound in
-BODY."
-  (ecase method-name
+PRESENTATION-SUBTYPEP, or DESCRIBE-PRESENTATION-TYPE.  The name matches
+by its symbol name, so a definition in another package names the same
+method.  One argument is (variable type-name).  The type's parameters
+and options are bound in BODY."
+  (ecase (presentation-method-name method-name)
     (presentation-typep
      (destructuring-bind (object (type-var type-name)) arglist
        `(register-presentation-method

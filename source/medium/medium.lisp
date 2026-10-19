@@ -42,26 +42,6 @@
         :FitzCLIM/graphics/text-style
         :FitzCLIM/output-record)
   (:export :basic-medium
-           :draw-circle
-           :draw-circle*
-           :draw-ellipse
-           :draw-ellipse*
-           :draw-line
-           :draw-line*
-           :draw-lines
-           :draw-lines*
-           :draw-point
-           :draw-point*
-           :draw-points
-           :draw-points*
-           :draw-polygon
-           :draw-polygon*
-           :draw-rectangle
-           :draw-rectangle*
-           :draw-rectangles
-           :draw-rectangles*
-           :draw-text
-           :draw-text*
            :invoke-with-drawing-options
            :medium
            :medium-background

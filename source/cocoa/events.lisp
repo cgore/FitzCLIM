@@ -37,6 +37,7 @@
         :sigma/behave
         :sb-alien
         :FitzCLIM/command
+        :FitzCLIM/command/define-command
         :FitzCLIM/frame
         :FitzCLIM/pane
         :FitzCLIM/gadget
@@ -53,6 +54,8 @@
         :FitzCLIM/graphics/text-style
         :FitzCLIM/opengl
         :FitzCLIM/presentation
+        :FitzCLIM/presentation/present
+        :FitzCLIM/presentation/translator
         :FitzCLIM/port)
   (:import-from :FitzCLIM/cocoa
                 :*cocoa-application*

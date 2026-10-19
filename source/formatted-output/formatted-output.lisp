@@ -37,7 +37,8 @@
         :sigma/behave
         :FitzCLIM/geometry
         :FitzCLIM/output-record
-        :FitzCLIM/medium)
+        :FitzCLIM/medium
+        :FitzCLIM/medium/drawing)
   (:export :cell-output-record
            :formatting-cell
            :formatting-item-list

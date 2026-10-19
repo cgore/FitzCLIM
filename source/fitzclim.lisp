@@ -44,11 +44,15 @@
         :FitzCLIM/graphics/text-style
         :FitzCLIM/sheet
         :FitzCLIM/command
+        :FitzCLIM/command/define-command
         :FitzCLIM/frame
         :FitzCLIM/event
         :FitzCLIM/presentation
+        :FitzCLIM/presentation/present
+        :FitzCLIM/presentation/translator
         :FitzCLIM/output-record
         :FitzCLIM/medium
+        :FitzCLIM/medium/drawing
         :FitzCLIM/pane
         :FitzCLIM/gadget
         :FitzCLIM/layout
@@ -72,11 +76,15 @@
                    :FitzCLIM/graphics/text-style
                    :FitzCLIM/sheet
                    :FitzCLIM/command
+                   :FitzCLIM/command/define-command
                    :FitzCLIM/frame
                    :FitzCLIM/event
                    :FitzCLIM/presentation
+                   :FitzCLIM/presentation/present
+                   :FitzCLIM/presentation/translator
                    :FitzCLIM/output-record
                    :FitzCLIM/medium
+                   :FitzCLIM/medium/drawing
                    :FitzCLIM/pane
                    :FitzCLIM/gadget
                    :FitzCLIM/layout

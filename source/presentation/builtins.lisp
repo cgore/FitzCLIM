@@ -32,7 +32,24 @@
 ;;;; ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 ;;;; POSSIBILITY OF SUCH DAMAGE.
 
-(in-package :FitzCLIM/presentation)
+(defpackage :FitzCLIM/presentation/builtins
+  (:use :common-lisp
+        :sigma/behave
+        :FitzCLIM/command
+        :FitzCLIM/command/define-command
+        :FitzCLIM/frame
+        :FitzCLIM/event
+        :FitzCLIM/output-record
+        :FitzCLIM/presentation
+        :FitzCLIM/presentation/present)
+  (:import-from :FitzCLIM/presentation
+                :expression
+                :numeric-presentation-subtypep)
+  (:import-from :FitzCLIM/presentation/present
+                :*presentation-type-histories*
+                :read-token
+                :whitespace?))
+(in-package :FitzCLIM/presentation/builtins)
 
 (defun parse-failure (control &rest arguments)
   "Signal a simple parse error from CONTROL and ARGUMENTS."

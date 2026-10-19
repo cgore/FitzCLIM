@@ -32,7 +32,37 @@
 ;;;; ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 ;;;; POSSIBILITY OF SUCH DAMAGE.
 
-(in-package :FitzCLIM/presentation)
+(defpackage :FitzCLIM/presentation/translator
+  (:use :common-lisp
+        :sigma/behave
+        :FitzCLIM/command
+        :FitzCLIM/command/define-command
+        :FitzCLIM/frame
+        :FitzCLIM/event
+        :FitzCLIM/output-record
+        :FitzCLIM/presentation
+        :FitzCLIM/presentation/present)
+  (:import-from :FitzCLIM/presentation/present
+                :read-token)
+  (:export :accept-frame-command
+           :call-presentation-translator
+           :command-from-presentation
+           :define-presentation-action
+           :define-presentation-to-command-translator
+           :define-presentation-translator
+           :document-presentation-translator
+           :execute-presentation-gesture
+           :find-applicable-translators
+           :presentation-translator
+           :presentation-translator-documentation
+           :presentation-translator-from-type
+           :presentation-translator-gesture
+           :presentation-translator-menu
+           :presentation-translator-name
+           :presentation-translator-priority
+           :presentation-translator-to-type
+           :throw-highlighted-presentation))
+(in-package :FitzCLIM/presentation/translator)
 
 (defclass presentation-translator ()
   ((name

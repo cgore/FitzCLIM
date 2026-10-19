@@ -32,7 +32,40 @@
 ;;;; ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 ;;;; POSSIBILITY OF SUCH DAMAGE.
 
-(in-package :FitzCLIM/windows)
+(defpackage :FitzCLIM/windows/gl
+  (:use :common-lisp
+        :sigma/behave
+        :sb-alien
+        :FitzCLIM/command
+        :FitzCLIM/command/define-command
+        :FitzCLIM/frame
+        :FitzCLIM/pane
+        :FitzCLIM/gadget
+        :FitzCLIM/event
+        :FitzCLIM/sheet
+        :FitzCLIM/geometry
+        :FitzCLIM/layout
+        :FitzCLIM/medium
+        :FitzCLIM/medium/drawing
+        :FitzCLIM/output-record
+        :FitzCLIM/graphics/design
+        :FitzCLIM/graphics/color
+        :FitzCLIM/graphics/opacity
+        :FitzCLIM/graphics/line-style
+        :FitzCLIM/graphics/text-style
+        :FitzCLIM/opengl
+        :FitzCLIM/presentation
+        :FitzCLIM/presentation/present
+        :FitzCLIM/presentation/translator
+        :FitzCLIM/port
+        :FitzCLIM/windows)
+  (:import-from :FitzCLIM/windows
+                :*window-proc-error*
+                :+wm-lbuttondown+
+                :+wm-paint+
+                :hwnd-sap
+                :send-message))
+(in-package :FitzCLIM/windows/gl)
 
 (defvar *opengl-library-loaded* nil
   "True after opengl32.dll has been loaded.")

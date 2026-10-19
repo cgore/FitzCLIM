@@ -36,6 +36,7 @@
   (:use :common-lisp
         :sigma/behave
         :FitzCLIM/command
+        :FitzCLIM/command/define-command
         :FitzCLIM/geometry
         :FitzCLIM/gadget
         :FitzCLIM/sheet

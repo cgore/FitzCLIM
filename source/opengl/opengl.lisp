@@ -39,6 +39,8 @@
         :FitzCLIM/sheet
         :FitzCLIM/layout
         :FitzCLIM/presentation
+        :FitzCLIM/presentation/present
+        :FitzCLIM/presentation/translator
         :FitzCLIM/event)
   (:export :add-scene-box
            :opengl-clear-blue

@@ -40,6 +40,8 @@
         :FitzCLIM/frame
         :FitzCLIM/event
         :FitzCLIM/presentation
+        :FitzCLIM/presentation/present
+        :FitzCLIM/presentation/translator
         :FitzCLIM/opengl
         :FitzCLIM/pane)
   (:export :*frame-manager-maker*

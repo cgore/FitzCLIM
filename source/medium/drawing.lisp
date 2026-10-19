@@ -32,7 +32,37 @@
 ;;;; ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 ;;;; POSSIBILITY OF SUCH DAMAGE.
 
-(in-package :FitzCLIM/medium)
+(defpackage :FitzCLIM/medium/drawing
+  (:use :common-lisp
+        :sigma/behave
+        :FitzCLIM/geometry
+        :FitzCLIM/graphics/color
+        :FitzCLIM/graphics/design
+        :FitzCLIM/graphics/line-style
+        :FitzCLIM/graphics/text-style
+        :FitzCLIM/output-record
+        :FitzCLIM/medium)
+  (:export :draw-circle
+           :draw-circle*
+           :draw-ellipse
+           :draw-ellipse*
+           :draw-line
+           :draw-line*
+           :draw-lines
+           :draw-lines*
+           :draw-point
+           :draw-point*
+           :draw-points
+           :draw-points*
+           :draw-polygon
+           :draw-polygon*
+           :draw-rectangle
+           :draw-rectangle*
+           :draw-rectangles
+           :draw-rectangles*
+           :draw-text
+           :draw-text*))
+(in-package :FitzCLIM/medium/drawing)
 
 (defun effective-line-style (stream thickness)
   "Return the line style to draw with.  THICKNESS overrides the stream."

@@ -53,6 +53,7 @@
         :FitzCLIM/graphics/text-style
         :FitzCLIM/opengl
         :FitzCLIM/presentation
+        :FitzCLIM/presentation/present
         :FitzCLIM/port))
 (in-package :FitzCLIM/cocoa)
 

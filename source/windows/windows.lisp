@@ -37,6 +37,7 @@
         :sigma/behave
         :sb-alien
         :FitzCLIM/command
+        :FitzCLIM/command/define-command
         :FitzCLIM/frame
         :FitzCLIM/pane
         :FitzCLIM/gadget
@@ -45,6 +46,7 @@
         :FitzCLIM/geometry
         :FitzCLIM/layout
         :FitzCLIM/medium
+        :FitzCLIM/medium/drawing
         :FitzCLIM/output-record
         :FitzCLIM/graphics/design
         :FitzCLIM/graphics/color
@@ -53,11 +55,21 @@
         :FitzCLIM/graphics/text-style
         :FitzCLIM/opengl
         :FitzCLIM/presentation
+        :FitzCLIM/presentation/present
+        :FitzCLIM/presentation/translator
         :FitzCLIM/port)
   (:export :make-windows-frame-manager
            :windows-frame-manager
            :windows-port))
 (in-package :FitzCLIM/windows)
+
+(defun windows-gl-function (name)
+  "Return the function named NAME in the Windows OpenGL package, or NIL."
+  (let ((package (find-package :fitzclim/windows/gl)))
+    (when package
+      (let ((symbol (find-symbol name package)))
+        (when (and symbol (fboundp symbol))
+          (symbol-function symbol))))))
 
 (defvar *windows-libraries-loaded* nil
   "True after user32.dll, gdi32.dll, and kernel32.dll have been loaded.")
@@ -1375,8 +1387,9 @@ DRAWER is called with the device context and a COLORREF."
      (values t 0))
     ((and (= message +wm-paint+)
           (typep (mirror-sheet hwnd) 'opengl-pane))
-     (when (fboundp 'paint-opengl-pane)
-       (funcall 'paint-opengl-pane hwnd))
+     (let ((paint (windows-gl-function "PAINT-OPENGL-PANE")))
+       (when paint
+         (funcall paint hwnd)))
      (values t 0))
     (t (values nil 0))))
 
@@ -1468,16 +1481,18 @@ DRAWER is called with the device context and a COLORREF."
           (remember-mirror sheet (sb-sys:sap-int hwnd))
           (when (typep sheet 'application-pane)
             (ensure-gdi-medium sheet))
-          (when (and (typep sheet 'opengl-pane) (fboundp 'realize-opengl-pane))
-            (funcall 'realize-opengl-pane sheet))
+          (let ((realize (windows-gl-function "REALIZE-OPENGL-PANE")))
+            (when (and (typep sheet 'opengl-pane) realize)
+              (funcall realize sheet)))
           (refresh-mirror sheet))))))
 
 (defun destroy-mirrors (sheet)
   "Destroy the native windows of SHEET and its descendants."
   (map-over-sheets
    (lambda (descendant)
-     (when (and (typep descendant 'opengl-pane) (fboundp 'release-opengl-pane))
-       (funcall 'release-opengl-pane descendant))
+     (let ((release (windows-gl-function "RELEASE-OPENGL-PANE")))
+       (when (and (typep descendant 'opengl-pane) release)
+         (funcall release descendant)))
      (let ((hwnd (sheet-mirror descendant)))
        (when hwnd
          (let ((sap (hwnd-sap hwnd)))
@@ -1561,12 +1576,13 @@ children are parented to the frame window."))
   (forget-frame-menu frame)
   (let ((top (frame-top-level-sheet frame)))
     (when top
-      (when (fboundp 'release-opengl-pane)
-        (map-over-sheets
-         (lambda (descendant)
-           (when (typep descendant 'opengl-pane)
-             (funcall 'release-opengl-pane descendant)))
-         top))
+      (let ((release (windows-gl-function "RELEASE-OPENGL-PANE")))
+        (when release
+          (map-over-sheets
+           (lambda (descendant)
+             (when (typep descendant 'opengl-pane)
+               (funcall release descendant)))
+           top)))
       (let ((hwnd (sheet-mirror top)))
         (when hwnd
           (let ((sap (hwnd-sap hwnd)))

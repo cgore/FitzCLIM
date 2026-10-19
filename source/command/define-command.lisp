@@ -32,7 +32,13 @@
 ;;;; ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 ;;;; POSSIBILITY OF SUCH DAMAGE.
 
-(in-package :FitzCLIM/command)
+(defpackage :FitzCLIM/command/define-command
+  (:use :common-lisp
+        :sigma/behave
+        :FitzCLIM/command)
+  (:export :*command-argument-typep*
+           :define-command))
+(in-package :FitzCLIM/command/define-command)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
 (defun command-type-specifier (type)

@@ -39,8 +39,11 @@
         :FitzCLIM/event
         :FitzCLIM/frame
         :FitzCLIM/medium
+        :FitzCLIM/medium/drawing
         :FitzCLIM/output-record
         :FitzCLIM/presentation
+        :FitzCLIM/presentation/present
+        :FitzCLIM/presentation/translator
         :FitzCLIM/layout)
   (:export :application-pane
            :find-innermost-applicable-presentation

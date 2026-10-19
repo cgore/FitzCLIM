@@ -75,10 +75,11 @@ and \texttt{should} forms in \texttt{sigma/behave}.
 
 The first frame manager targets Windows.  Geometry, ink, sheets,
 commands, frames, events, presentations, output recording, gadgets,
-and pane layout are under \texttt{source/}.  An application pane
-records what it draws and finds the presentation under a pointer.  A
-frame can stack its panes.  A gadget holds a value or runs a callback.
-The native frame manager is still to be written.
+pane layout, and the Windows frame manager are under \texttt{source/}.
+An application pane records what it draws and finds the presentation
+under a pointer.  A frame can stack its panes.  A gadget holds a value
+or runs a callback.  On Windows the frame manager realizes that frame
+as a window and those gadgets as native controls.
 
 You can download the library from GitHub at:\\
 \url{https://github.com/cgore/FitzCLIM}

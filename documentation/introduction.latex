@@ -74,10 +74,11 @@ Tests use $\Sigma$~\cite{gore-sigma}, in particular the \texttt{behavior}
 and \texttt{should} forms in \texttt{sigma/behave}.
 
 The first frame manager targets Windows.  Geometry, ink, sheets,
-commands, frames, events, and presentations are under
-\texttt{source/}.  A gesture on a presentation can produce a command.
-Output recording, gadgets, and the native frame manager are still to
-be written.
+commands, frames, events, presentations, output recording, and
+gadgets are under \texttt{source/}.  An application pane records what
+it draws and finds the presentation under a pointer.  A gadget holds
+a value or runs a callback.  The native frame manager is still to be
+written.
 
 You can download the library from GitHub at:\\
 \url{https://github.com/cgore/FitzCLIM}

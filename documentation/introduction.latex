@@ -73,9 +73,9 @@ be consulted.  Its text stays out of this tree.
 Tests use $\Sigma$~\cite{gore-sigma}, in particular the \texttt{behavior}
 and \texttt{should} forms in \texttt{sigma/behave}.
 
-The first frame manager targets Windows.  The geometry, ink, and sheet
-protocols live under \texttt{source/}.  Frames, gadgets, and the native
-frame manager are still to be written.
+The first frame manager targets Windows.  The geometry, ink, sheet,
+command, and frame protocols live under \texttt{source/}.  Gadgets and
+the native frame manager are still to be written.
 
 You can download the library from GitHub at:\\
 \url{https://github.com/cgore/FitzCLIM}

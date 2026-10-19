@@ -39,7 +39,8 @@
         :FitzCLIM/frame
         :FitzCLIM/event
         :FitzCLIM/output-record)
-  (:export :*accepting-values-acceptor*
+  (:export :*accept-input-editor*
+           :*accepting-values-acceptor*
            :*input-context*
            :*pointer-documentation-view*
            :+gadget-view+

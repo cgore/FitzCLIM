@@ -54,6 +54,7 @@
         :FitzCLIM/layout
         :FitzCLIM/formatted-output
         :FitzCLIM/redisplay
+        :FitzCLIM/input-editor
         :FitzCLIM/dialog
         :FitzCLIM/opengl
         :FitzCLIM/windows))
@@ -78,6 +79,7 @@
                    :FitzCLIM/layout
                    :FitzCLIM/formatted-output
                    :FitzCLIM/redisplay
+                   :FitzCLIM/input-editor
                    :FitzCLIM/dialog
                    :FitzCLIM/opengl
                    :FitzCLIM/windows))

@@ -292,6 +292,12 @@ The function receives the type, stream, default, default type, prompt,
 and query identifier.  It returns the object and its type.
 ACCEPTING-VALUES binds it.")
 
+(defvar *accept-input-editor* nil
+  "A function of a stream and a continuation, or NIL.
+ACCEPT calls it around the presentation method.  The continuation
+receives the stream to read.  NIL reads the original stream.  The input
+editor sets it.")
+
 (defun accept (type &key (stream *standard-input*)
                       (view +textual-view+)
                       (default nil)
@@ -309,8 +315,9 @@ ACCEPTING-VALUES binds it.")
   "Read an object of TYPE from STREAM.  Return the object and its type.
 End of input with PROVIDE-DEFAULT true returns DEFAULT and
 DEFAULT-TYPE.  While ACCEPTING-VALUES is running, the query's stored
-value is returned instead.  The remaining keywords are accepted for
-callers and are used when a frame manager runs the input editor."
+value is returned instead.  *ACCEPT-INPUT-EDITOR*, when set, supplies
+the stream the presentation method reads.  The remaining keywords are
+accepted for callers."
   (declare (ignore insert-default prompt-mode display-default
                    activation-gestures additional-activation-gestures
                    delimiter-gestures additional-delimiter-gestures))
@@ -325,13 +332,17 @@ callers and are used when a frame manager runs the input editor."
         (return-from accept (values object result-type)))))
   (when (and provide-default (null (peek-char t stream nil nil)))
     (return-from accept (values default default-type)))
-  (multiple-value-bind (object object-type)
-      (invoke-presentation-method 'accept type stream view
-                                  :default default
-                                  :default-type default-type)
-    (let ((result-type (or object-type type)))
-      (remember-presentation type object)
-      (values object result-type))))
+  (flet ((read-object (input)
+           (invoke-presentation-method 'accept type input view
+                                       :default default
+                                       :default-type default-type)))
+    (multiple-value-bind (object object-type)
+        (if *accept-input-editor*
+            (funcall *accept-input-editor* stream #'read-object)
+            (read-object stream))
+      (let ((result-type (or object-type type)))
+        (remember-presentation type object)
+        (values object result-type)))))
 
 (defun accept-from-string (type string &rest keys &key view default default-type provide-default)
   "Read an object of TYPE from STRING.  Return the object and its type."

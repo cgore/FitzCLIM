@@ -137,6 +137,10 @@
       :depends-on ("output-record")
       :components
       ((:file "redisplay")))
+     (:module "input-editor"
+      :depends-on ("presentation")
+      :components
+      ((:file "input-editor")))
      (:module "dialog"
       :depends-on ("presentation" "command")
       :components
@@ -156,4 +160,5 @@
       :depends-on ("geometry" "graphics" "sheet" "command" "frame"
                    "event" "presentation" "output-record" "medium"
                    "pane" "gadget" "layout" "formatted-output"
-                   "redisplay" "dialog" "opengl" "windows"))))))
+                   "redisplay" "input-editor" "dialog" "opengl"
+                   "windows"))))))

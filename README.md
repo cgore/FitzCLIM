@@ -2,6 +2,8 @@
 
 [![Henry FitzRoy, Duke of Richmond and Somerset](Henry_FitzRoy.jpg)](https://commons.wikimedia.org/wiki/File:Lucas_Horenbout_-_Henry_Fitzroy,_Duke_of_Richmond_and_Somerset_(1519-36)_-_Google_Art_Project.jpg)
 
+**[View PDF Documentation](documentation/fitzclim.pdf)**
+
 FitzCLIM is a Common Lisp implementation of the CLIM II protocols and the
 CLIM 2.2 revisions.  It is
 aimed at SBCL.  The frame manager realizes the standard gadgets as native

@@ -51,7 +51,8 @@
         :FitzCLIM/medium
         :FitzCLIM/pane
         :FitzCLIM/gadget
-        :FitzCLIM/layout))
+        :FitzCLIM/layout
+        :FitzCLIM/windows))
 (in-package :FitzCLIM)
 
 (dolist (package '(:FitzCLIM/geometry
@@ -70,7 +71,8 @@
                    :FitzCLIM/medium
                    :FitzCLIM/pane
                    :FitzCLIM/gadget
-                   :FitzCLIM/layout))
+                   :FitzCLIM/layout
+                   :FitzCLIM/windows))
   (do-external-symbols (symbol package)
     (export symbol)))
 
@@ -100,7 +102,8 @@
   (should-be-true (mediump (make-instance 'basic-medium)))
   (should-be-true (sheetp (make-instance 'application-pane)))
   (should-be-true (gadgetp (make-instance 'push-button)))
-  (should-be-true (space-requirement-p (make-space-requirement :width 3 :height 4))))
+  (should-be-true (space-requirement-p (make-space-requirement :width 3 :height 4)))
+  (should-be-true (typep (make-windows-frame-manager) 'windows-frame-manager)))
 
 (behavior 'make-command-table
   (let ((table (make-command-table 'fitzclim-reexport-tests :errorp nil)))

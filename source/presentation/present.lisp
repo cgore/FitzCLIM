@@ -125,9 +125,18 @@
     :documentation "The view that produced this presentation, or NIL."))
   (:documentation "A Lisp object presented to the user."))
 
-(defclass standard-presentation (presentation)
+(defclass standard-presentation (presentation compound-output-record)
   ()
-  (:documentation "A presentation stored with its object and its type."))
+  (:documentation
+   "A presentation stored with its object, its type, and its output."))
+
+(defmethod output-record-refined-position-test
+    ((record standard-presentation) x y)
+  (if (presentation-single-box record)
+      t
+      (some (lambda (child)
+              (output-record-contains-position-p child x y))
+            (output-record-children record))))
 
 (defun presentationp (object)
   "Return true if OBJECT is a presentation."
@@ -151,18 +160,44 @@
     (should-eq 'widget (presentation-type presentation))
     (should= 2 (presentation-modifier presentation))))
 
-(defmacro with-output-as-presentation ((stream object type
-                                         &key modifier single-box)
-                                        &body body)
-  "Run BODY with STREAM and return a presentation of OBJECT as TYPE.
-The application pane records BODY later.  This form still returns the
-presentation so a gesture can address the object."
-  (declare (ignore stream))
-  `(progn
-     ,@body
-     (make-presentation ,object ,type
-                        :modifier ,modifier
-                        :single-box ,single-box)))
+(defmacro with-output-as-presentation
+    ((stream object type &key modifier single-box (allow-sensitive-inferiors t))
+     &body body)
+  "Run BODY and return a presentation of OBJECT as TYPE.
+A recording STREAM saves BODY inside the presentation.  Any other
+stream runs BODY and returns a presentation that has no children.
+ALLOW-SENSITIVE-INFERIORS false keeps a nested presentation from
+being recorded."
+  (let ((stream-var (gensym "STREAM"))
+        (presentation (gensym "PRESENTATION"))
+        (allow (gensym "ALLOW")))
+    `(let ((,stream-var ,stream)
+           (,allow ,allow-sensitive-inferiors))
+       (unless (presentation-type-specifier-p ,type)
+         (error "~S is not a presentation type." ,type))
+       (cond
+         ((and ,stream-var
+               (output-recording-stream-p ,stream-var)
+               (stream-allows-sensitive-inferiors ,stream-var))
+          (with-new-output-record
+              (,stream-var 'standard-presentation ,presentation
+               :object ,object
+               :type ,type
+               :modifier ,modifier
+               :single-box ,single-box)
+            (let ((old (stream-allows-sensitive-inferiors ,stream-var)))
+              (setf (stream-allows-sensitive-inferiors ,stream-var) ,allow)
+              (unwind-protect
+                   (progn ,@body)
+                (setf (stream-allows-sensitive-inferiors ,stream-var) old)))))
+         ((and ,stream-var (output-recording-stream-p ,stream-var))
+          ,@body
+          nil)
+         (t
+          ,@body
+          (make-presentation ,object ,type
+                             :modifier ,modifier
+                             :single-box ,single-box))))))
 
 (behavior 'with-output-as-presentation
   (let ((presentation (with-output-as-presentation (nil 'gear 'widget)
@@ -178,13 +213,18 @@ presentation so a gesture can address the object."
                          single-box
                          (sensitive t))
   "Write OBJECT of TYPE to STREAM in VIEW.  Return OBJECT.
-SINGLE-BOX and SENSITIVE are recorded by the application pane."
-  (declare (ignore single-box sensitive))
+On a recording stream, SENSITIVE true saves the output as a presentation.
+SINGLE-BOX makes the whole bounding box sensitive."
   (unless (presentation-type-specifier-p type)
     (error "~S is not a presentation type." type))
-  (invoke-presentation-method 'present type object stream view
-                              :acceptably acceptably
-                              :for-context-type for-context-type)
+  (flet ((draw ()
+           (invoke-presentation-method 'present type object stream view
+                                       :acceptably acceptably
+                                       :for-context-type for-context-type)))
+    (if (and sensitive stream (output-recording-stream-p stream))
+        (with-output-as-presentation (stream object type :single-box single-box)
+          (draw))
+        (draw)))
   object)
 
 (defun present-to-string (object &rest keys &key type view acceptably for-context-type)

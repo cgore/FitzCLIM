@@ -37,7 +37,8 @@
         :sigma/behave
         :FitzCLIM/command
         :FitzCLIM/frame
-        :FitzCLIM/event)
+        :FitzCLIM/event
+        :FitzCLIM/output-record)
   (:export :*input-context*
            :*pointer-documentation-view*
            :+gadget-view+

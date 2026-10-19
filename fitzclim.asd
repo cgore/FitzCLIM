@@ -98,7 +98,7 @@
       :components
       ((:file "event")))
      (:module "presentation"
-      :depends-on ("command" "frame" "event")
+      :depends-on ("command" "frame" "event" "output-record")
       :components
       ((:file "presentation-type")
        (:file "present"
@@ -107,6 +107,21 @@
         :depends-on ("present"))
        (:file "translator"
         :depends-on ("builtins"))))
+     (:module "output-record"
+      :depends-on ("geometry" "graphics")
+      :components
+      ((:file "output-record")))
+     (:module "medium"
+      :depends-on ("output-record")
+      :components
+      ((:file "medium")
+       (:file "drawing"
+        :depends-on ("medium"))))
+     (:module "pane"
+      :depends-on ("sheet" "medium" "presentation")
+      :components
+      ((:file "pane")))
      (:file "fitzclim"
       :depends-on ("geometry" "graphics" "sheet" "command" "frame"
-                   "event" "presentation"))))))
+                   "event" "presentation" "output-record" "medium"
+                   "pane"))))))

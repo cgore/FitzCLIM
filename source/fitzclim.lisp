@@ -46,7 +46,10 @@
         :FitzCLIM/command
         :FitzCLIM/frame
         :FitzCLIM/event
-        :FitzCLIM/presentation))
+        :FitzCLIM/presentation
+        :FitzCLIM/output-record
+        :FitzCLIM/medium
+        :FitzCLIM/pane))
 (in-package :FitzCLIM)
 
 (dolist (package '(:FitzCLIM/geometry
@@ -60,7 +63,10 @@
                    :FitzCLIM/command
                    :FitzCLIM/frame
                    :FitzCLIM/event
-                   :FitzCLIM/presentation))
+                   :FitzCLIM/presentation
+                   :FitzCLIM/output-record
+                   :FitzCLIM/medium
+                   :FitzCLIM/pane))
   (do-external-symbols (symbol package)
     (export symbol)))
 
@@ -85,7 +91,10 @@
 (behavior 'accept-from-string
   (should= 7 (accept-from-string 'integer "7"))
   (should-be-true (eventp (make-instance 'pointer-button-press-event
-                                         :button :left))))
+                                         :button :left)))
+  (should-be-true (output-record-p (make-instance 'standard-tree-output-history)))
+  (should-be-true (mediump (make-instance 'basic-medium)))
+  (should-be-true (sheetp (make-instance 'application-pane))))
 
 (behavior 'make-command-table
   (let ((table (make-command-table 'fitzclim-reexport-tests :errorp nil)))

@@ -44,7 +44,9 @@
         :FitzCLIM/graphics/text-style
         :FitzCLIM/sheet
         :FitzCLIM/command
-        :FitzCLIM/frame))
+        :FitzCLIM/frame
+        :FitzCLIM/event
+        :FitzCLIM/presentation))
 (in-package :FitzCLIM)
 
 (dolist (package '(:FitzCLIM/geometry
@@ -56,7 +58,9 @@
                    :FitzCLIM/graphics/text-style
                    :FitzCLIM/sheet
                    :FitzCLIM/command
-                   :FitzCLIM/frame))
+                   :FitzCLIM/frame
+                   :FitzCLIM/event
+                   :FitzCLIM/presentation))
   (do-external-symbols (symbol package)
     (export symbol)))
 
@@ -77,6 +81,11 @@
         (child (make-instance 'basic-sheet)))
     (adopt-sheet parent child)
     (should-eq parent (sheet-parent child))))
+
+(behavior 'accept-from-string
+  (should= 7 (accept-from-string 'integer "7"))
+  (should-be-true (eventp (make-instance 'pointer-button-press-event
+                                         :button :left))))
 
 (behavior 'make-command-table
   (let ((table (make-command-table 'fitzclim-reexport-tests :errorp nil)))

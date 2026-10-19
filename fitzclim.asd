@@ -94,5 +94,19 @@
       :depends-on ("command")
       :components
       ((:file "frame")))
+     (:module "event"
+      :components
+      ((:file "event")))
+     (:module "presentation"
+      :depends-on ("command" "frame" "event")
+      :components
+      ((:file "presentation-type")
+       (:file "present"
+        :depends-on ("presentation-type"))
+       (:file "builtins"
+        :depends-on ("present"))
+       (:file "translator"
+        :depends-on ("builtins"))))
      (:file "fitzclim"
-      :depends-on ("geometry" "graphics" "sheet" "command" "frame"))))))
+      :depends-on ("geometry" "graphics" "sheet" "command" "frame"
+                   "event" "presentation"))))))

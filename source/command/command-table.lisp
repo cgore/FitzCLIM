@@ -35,7 +35,8 @@
 (defpackage :FitzCLIM/command
   (:use :common-lisp
         :sigma/behave)
-  (:export :*default-command-table*
+  (:export :*command-argument-typep*
+           :*default-command-table*
            :add-command-to-command-table
            :command
            :command-arguments

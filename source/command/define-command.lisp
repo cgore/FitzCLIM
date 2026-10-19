@@ -59,14 +59,21 @@ unquoted."
                    (:menu (setf menu value))))
         (values name table line-name menu)))))
 
+(defvar *command-argument-typep* #'typep
+  "Function of an object and a type specifier.
+Command functions call it before the body runs.  It starts as TYPEP.
+The presentation protocol replaces it so a command argument may be a
+presentation type.")
+
 (defmacro define-command (name-and-options arguments &body body)
   "Define a command and add it to a command table.
 NAME-AND-OPTIONS is a symbol, or a list (name :command-table table
 :name line-name :menu menu).  A symbol uses *DEFAULT-COMMAND-TABLE*.
 Each argument is (name type) or (name type &rest options).  TYPE is a
-Common Lisp type specifier or a quoted specifier.  The options are
-kept for later and are not interpreted yet.  Redefining a command
-replaces its table entry."
+Common Lisp type specifier or a quoted specifier.  The command
+function checks each argument with *COMMAND-ARGUMENT-TYPEP*.  The
+options are kept for later and are not interpreted yet.  Redefining a
+command replaces its table entry."
   (multiple-value-bind (name table line-name menu)
       (parse-define-command-name name-and-options)
     (unless table
@@ -80,7 +87,9 @@ replaces its table entry."
         (let ((parameter (first argument))
               (type (command-type-specifier (second argument))))
           (push parameter parameters)
-          (push `(check-type ,parameter ,type) checks)
+          (push `(unless (funcall *command-argument-typep* ,parameter ',type)
+                   (error 'type-error :datum ,parameter :expected-type ',type))
+                checks)
           (push (list parameter type) stored)))
       `(progn
          (defun ,name ,(nreverse parameters)

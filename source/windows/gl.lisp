@@ -63,7 +63,12 @@
                 :*window-proc-error*
                 :+wm-lbuttondown+
                 :+wm-paint+
+                :begin-paint
+                :end-paint
+                :get-dc
+                :get-last-error
                 :hwnd-sap
+                :release-dc
                 :send-message))
 (in-package :FitzCLIM/windows/gl)
 

@@ -61,6 +61,7 @@
            :frame-width
            :framep
            :*frame-event-reader*
+           :*frame-input-waiter*
            :layout-frame
            :make-application-frame
            :read-frame-command
@@ -171,12 +172,13 @@ Each option is a list beginning with a keyword."
 SUPERCLASSES default to APPLICATION-FRAME, which is added when it is
 missing.  :COMMAND-TABLE is a name, or (name :inherit-from (tables)).
 :PRETTY-NAME is the string shown for the frame.  :PANES and :LAYOUTS
-build the frame's sheets.  :GEOMETRY is a width and a height.  The
-command table becomes *DEFAULT-COMMAND-TABLE* for later DEFINE-COMMAND
-forms."
+build the frame's sheets.  :GEOMETRY is a width and a height.
+:DOCUMENTATION is the class docstring.  The command table becomes
+*DEFAULT-COMMAND-TABLE* for later DEFINE-COMMAND forms."
   (dolist (option options)
     (unless (member (first option)
-                    '(:command-table :pretty-name :panes :layouts :geometry))
+                    '(:command-table :pretty-name :panes :layouts :geometry
+                      :documentation))
       (error "The frame option ~S is not implemented yet." (first option))))
   (multiple-value-bind (table-name inherit-from)
       (parse-frame-command-table name options)
@@ -185,9 +187,12 @@ forms."
            (pretty (if pretty-option
                        (second pretty-option)
                        (string-capitalize (symbol-name name))))
+           (documentation (second (assoc :documentation options)))
            (panes (assoc :panes options))
            (layouts (assoc :layouts options))
            (geometry (assoc :geometry options)))
+      (when (and documentation (not (stringp documentation)))
+        (error ":DOCUMENTATION must be a string."))
       (when (or panes layouts)
         (unless (and panes layouts)
           (error "A frame with panes needs both :PANES and :LAYOUTS."))
@@ -234,7 +239,9 @@ forms."
            (define-command-table ,table-name :inherit-from ,inherit-from)
            (defclass ,name ,supers
              ,slots
-             (:default-initargs ,@initargs))
+             (:default-initargs ,@initargs)
+             ,@(when documentation
+                 `((:documentation ,documentation))))
            ,@(when pane-method (list pane-method))
            ',name)))))
 
@@ -294,15 +301,22 @@ Missing sizes use the frame's current width and height."
 (defvar *frame-event-reader* nil
   "A function of one frame, or NIL.
 READ-FRAME-COMMAND calls it when the frame has no pending command.
-The function returns a command, or NIL when input has ended.  A frame
-manager sets it.  NIL keeps a windowless loop from waiting.")
+The function returns a command, or NIL when none is waiting.  A frame
+manager sets it.")
+
+(defvar *frame-input-waiter* nil
+  "A function of one frame, or NIL.
+The command loop calls it when READ-FRAME-COMMAND finds no command.
+Return true to read again.  Return false to leave the loop.  NIL
+means an empty queue ends the loop, which is the windowless case.")
 
 (defgeneric read-frame-command (frame)
   (:documentation
-   "Return the next command for FRAME, or NIL to leave the loop.
+   "Return the next command for FRAME, or NIL when none is waiting.
    A command is a name, or a list of a name and its arguments.
    A pending command is returned first.  *FRAME-EVENT-READER* is used
-   only when that queue is empty."))
+   only when that queue is empty.  NIL does not by itself mean the
+   loop should exit."))
 
 (defmethod read-frame-command ((frame application-frame))
   (or (pop (frame-pending-commands frame))
@@ -323,14 +337,19 @@ manager sets it.  NIL keeps a windowless loop from waiting.")
 
 (defun default-frame-top-level (frame)
   "Read and run commands for FRAME until the input ends or FRAME-EXIT
-runs.  Return FRAME."
+runs.  A shown frame waits for the next event.  An unshown frame
+returns when no command is waiting.  Return FRAME."
   (let ((*application-frame* frame))
     (catch 'frame-exit
       (loop
         (let ((command (read-frame-command frame)))
-          (unless command
-            (return frame))
-          (execute-frame-command frame command))))))
+          (cond
+            (command
+             (execute-frame-command frame command))
+            ((and *frame-input-waiter*
+                  (funcall *frame-input-waiter* frame)))
+            (t
+             (return frame))))))))
 
 (defgeneric run-frame-top-level (frame)
   (:documentation "Run FRAME's command loop."))
@@ -355,6 +374,10 @@ runs.  Return FRAME."
 (define-application-frame adder-child-frame (adder-frame) ()
   (:command-table (adder-child-frame :inherit-from (adder-frame))))
 
+(define-application-frame documented-frame ()
+  ()
+  (:documentation "A frame with a class note."))
+
 (behavior 'define-application-frame
   (let ((frame (make-application-frame 'adder-frame)))
     (should-be-true (framep frame))
@@ -376,6 +399,15 @@ runs.  Return FRAME."
     (should= 4 (execute-frame-command child '(com-plus 4)))
     (should= 4 (adder-total child)))
   (should-be-null (frame-panes (make-application-frame 'adder-frame)))
+  (should-equal "A frame with a class note."
+                (documentation 'documented-frame 'type))
+  (should-be-true
+   (handler-case
+       (progn
+         (macroexpand-1 '(define-application-frame bad-doc-frame () ()
+                          (:documentation 5)))
+         nil)
+     (error () t)))
   (should-be-true
    (handler-case
        (progn

@@ -43,7 +43,8 @@
         :FitzCLIM/output-record
         :FitzCLIM/medium
         :FitzCLIM/medium/drawing)
-  (:export :postscript-medium
+  (:export :new-page
+           :postscript-medium
            :postscript-stream
            :with-output-to-postscript-stream))
 (in-package :FitzCLIM/hardcopy)
@@ -235,6 +236,11 @@ opacity below one half are omitted."
                               (concatenate 'string "(" (postscript-string string) ")")
                               "show")))))))
 
+(defun new-page (stream)
+  "End STREAM's current page.  Later drawing is on the next page."
+  (write-postscript (stream-medium stream) "showpage")
+  nil)
+
 (defun postscript-page (stream)
   "Return the PostScript written to STREAM so far."
   (get-output-stream-string (postscript-output (stream-medium stream))))
@@ -266,4 +272,13 @@ PAGE-WIDTH and PAGE-HEIGHT are in points.  The default page is
     (should-be-true (search "(A\\(b\\)) show" page)))
   (let ((page (with-output-to-postscript-stream (stream :page-height 100)
                 (draw-line* stream 0 0 4 0 :ink +transparent-ink+))))
-    (should-be-false (search "lineto" page))))
+    (should-be-false (search "lineto" page)))
+  (let ((page (with-output-to-postscript-stream (stream :page-height 100)
+                (draw-text* stream "one" 0 0)
+                (new-page stream)
+                (draw-text* stream "two" 0 0))))
+    (let ((first (search "(one) show" page))
+          (break (search "showpage" page))
+          (second (search "(two) show" page)))
+      (should-be-true first)
+      (should-be-true (< first break second)))))

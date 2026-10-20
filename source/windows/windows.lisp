@@ -101,6 +101,9 @@
 (defparameter +wm-keyup+ #x0101)
 (defparameter +wm-char+ #x0102)
 (defparameter +wm-command+ #x0111)
+(defparameter +mf-string+ #x0000)
+(defparameter +mf-popup+ #x0010)
+(defparameter +mf-separator+ #x0800)
 (defparameter +wm-hscroll+ #x0114)
 (defparameter +wm-vscroll+ #x0115)
 (defparameter +wm-mousemove+ #x0200)
@@ -213,6 +216,15 @@ so a Lisp range is scaled onto 0 through 1000.")
   (menu system-area-pointer))
 (define-alien-routine ("GetMenu" get-menu) system-area-pointer
   (hwnd system-area-pointer))
+(define-alien-routine ("CreatePopupMenu" create-popup-menu) system-area-pointer)
+(define-alien-routine ("GetSubMenu" get-sub-menu) system-area-pointer
+  (menu system-area-pointer)
+  (position (signed 32)))
+(define-alien-routine ("GetMenuItemCount" get-menu-item-count) (signed 32)
+  (menu system-area-pointer))
+(define-alien-routine ("GetMenuItemID" get-menu-item-id) (unsigned 32)
+  (menu system-area-pointer)
+  (position (signed 32)))
 (define-alien-routine ("MoveWindow" move-window) (signed 32)
   (hwnd system-area-pointer)
   (x (signed 32))
@@ -739,26 +751,51 @@ unless the string must outlive the call."
         (setf (frame-pending-commands frame)
               (append (frame-pending-commands frame) (list name)))))))
 
+(defun fill-menu (menu frame items)
+  "Append ITEMS onto the Windows menu MENU for FRAME.
+Return the command ids in order, including ids inside submenus.  A
+divider has no id.  A submenu is a popup menu."
+  (let ((ids nil))
+    (dolist (item items)
+      (ecase (command-menu-item-type item)
+        (:command
+         (let ((id (incf *next-menu-id*)))
+           (with-utf16 (text (command-menu-item-name item))
+             (unless (plusp (append-menu-w menu +mf-string+ id (alien-sap text)))
+               (error "AppendMenuW failed (error ~D)." (get-last-error))))
+           (setf (gethash id *menu-commands*)
+                 (cons frame (command-menu-item-value item)))
+           (setf ids (nconc ids (list id)))))
+        (:divider
+         (unless (plusp (append-menu-w menu +mf-separator+ 0 (sb-sys:int-sap 0)))
+           (error "AppendMenuW failed (error ~D)." (get-last-error))))
+        (:menu
+         (let ((popup (create-popup-menu))
+               (table (command-menu-item-value item)))
+           (unless (plusp (sb-sys:sap-int popup))
+             (error "CreatePopupMenu failed (error ~D)." (get-last-error)))
+           (setf ids (nconc ids
+                            (fill-menu popup frame (command-menu-items table))))
+           (with-utf16 (text (command-menu-item-name item))
+             (unless (plusp (append-menu-w menu +mf-popup+
+                                            (ldb (byte 64 0) (sb-sys:sap-int popup))
+                                            (alien-sap text)))
+               (error "AppendMenuW failed (error ~D)." (get-last-error))))))))
+    ids))
+
 (defun install-frame-menu (frame)
-  "Give FRAME a menu bar of the commands that have a menu string.
-A frame with no such commands keeps no menu."
-  (let ((items (remove-if-not #'stringp (command-table-menu (frame-command-table frame))
-                              :key #'first)))
+  "Give FRAME a menu bar from its command table.
+Commands with a menu string are items.  An explicit submenu is a
+popup.  A frame with no items keeps no menu."
+  (let ((items (command-menu-items (frame-command-table frame))))
     (when items
-      (let ((menu (create-menu))
-            (ids nil))
+      (let ((menu (create-menu)))
         (unless (plusp (sb-sys:sap-int menu))
           (error "CreateMenu failed (error ~D)." (get-last-error)))
-        (dolist (item items)
-          (let ((id (incf *next-menu-id*)))
-            (with-utf16 (text (first item))
-              (unless (plusp (append-menu-w menu 0 id (alien-sap text)))
-                (error "AppendMenuW failed (error ~D)." (get-last-error))))
-            (setf (gethash id *menu-commands*) (cons frame (second item)))
-            (push id ids)))
-        (unless (plusp (set-menu (hwnd-sap (frame-hwnd frame)) menu))
-          (error "SetMenu failed (error ~D)." (get-last-error)))
-        (setf (gethash frame *frame-menu-ids*) (nreverse ids))))))
+        (let ((ids (fill-menu menu frame items)))
+          (unless (plusp (set-menu (hwnd-sap (frame-hwnd frame)) menu))
+            (error "SetMenu failed (error ~D)." (get-last-error)))
+          (setf (gethash frame *frame-menu-ids*) ids))))))
 
 (defun forget-frame-menu (frame)
   "Drop FRAME's menu item ids.  DestroyWindow destroys the menu bar."
@@ -2065,5 +2102,73 @@ children are parented to the frame window."))
              (error "The window procedure failed: ~A" *window-proc-error*))
            (disown-frame manager frame)
            (should-be-null (gethash frame *frame-menu-ids*)))
+      (when (member frame (frame-manager-frames manager) :test #'eq)
+        (disown-frame manager frame)))))
+
+(define-command-table windows-submenu-more)
+
+(define-application-frame windows-submenu-frame ()
+  ((total
+    :initform 0
+    :accessor submenu-total)
+   (note
+    :initform nil
+    :accessor submenu-note))
+  (:command-table (windows-submenu-frame :inherit-from (windows-submenu-more)))
+  (:pretty-name "Windows Submenu")
+  (:panes
+   (canvas :application :width 40 :height 20))
+  (:layouts
+   (default (progn canvas)))
+  (:geometry 40 20))
+
+(define-command (com-submenu-add :command-table windows-submenu-frame
+                                 :name t :menu "Add")
+    ()
+  "Add one to the frame total and return the new total."
+  (incf (submenu-total *application-frame*)))
+
+(define-command (com-submenu-note :command-table windows-submenu-more :name t)
+    ()
+  "Remember that the submenu command ran."
+  (setf (submenu-note *application-frame*) 7))
+
+(behavior 'windows-command-submenu
+  (setf *window-proc-error* nil)
+  (let ((manager (make-windows-frame-manager))
+        (frame (make-application-frame 'windows-submenu-frame)))
+    (unwind-protect
+         (progn
+           (add-menu-item-to-command-table 'windows-submenu-more
+                                           "Note" :command 'com-submenu-note
+                                           :errorp nil)
+           (add-menu-item-to-command-table (frame-command-table frame)
+                                           "More" :menu 'windows-submenu-more
+                                           :documentation "Further commands."
+                                           :errorp nil)
+           (adopt-frame manager frame)
+           (let ((menu (get-menu (hwnd-sap (frame-hwnd frame))))
+                 (ids (gethash frame *frame-menu-ids*))
+                 (popup nil))
+             (should-be-true (plusp (sb-sys:sap-int menu)))
+             (should= 2 (get-menu-item-count menu))
+             (should= 2 (length ids))
+             (should-be-false (plusp (sb-sys:sap-int (get-sub-menu menu 0))))
+             (setf popup (get-sub-menu menu 1))
+             (should-be-true (plusp (sb-sys:sap-int popup)))
+             (should= 1 (get-menu-item-count popup))
+             (should= (first ids) (get-menu-item-id menu 0))
+             (should= #xffffffff (get-menu-item-id menu 1))
+             (should= (second ids) (get-menu-item-id popup 0))
+             (send-message (frame-hwnd frame) +wm-command+ (second ids) 0))
+           (should-eq frame (run-frame-top-level frame))
+           (should= 7 (submenu-note frame))
+           (should= 0 (submenu-total frame))
+           (when *window-proc-error*
+             (error "The window procedure failed: ~A" *window-proc-error*))
+           (let ((note-id (second (gethash frame *frame-menu-ids*))))
+             (disown-frame manager frame)
+             (should-be-null (gethash frame *frame-menu-ids*))
+             (should-be-null (gethash note-id *menu-commands*))))
       (when (member frame (frame-manager-frames manager) :test #'eq)
         (disown-frame manager frame)))))

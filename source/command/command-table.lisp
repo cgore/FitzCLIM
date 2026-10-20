@@ -37,12 +37,18 @@
         :sigma/behave)
   (:export :*default-command-table*
            :add-command-to-command-table
+           :add-menu-item-to-command-table
            :command
            :command-arguments
            :command-function
            :command-line-name
            :command-line-name-from-symbol
            :command-menu
+           :command-menu-item
+           :command-menu-item-name
+           :command-menu-item-type
+           :command-menu-item-value
+           :command-menu-items
            :command-name
            :command-present-in-command-table-p
            :command-table
@@ -79,7 +85,12 @@
     :initform nil
     :accessor %commands
     :documentation "An alist of command names and commands, in the
-    order they were added."))
+    order they were added.")
+   (menu-items
+    :initform nil
+    :accessor %menu-items
+    :documentation "Explicit menu items of this table, in the order
+    they were added.  Inherited tables keep their own items."))
   (:documentation "A command table stored as an alist."))
 
 (defun command-table-p (object)
@@ -304,3 +315,141 @@ appear, in the order MAP-OVER-COMMAND-TABLE-COMMANDS visits them."
    (handler-case
        (progn (find-command-table 'missing-command-table) nil)
      (error () t))))
+
+(defclass command-menu-item ()
+  ((type
+    :initarg :type
+    :reader command-menu-item-type
+    :documentation "One of :COMMAND, :MENU, or :DIVIDER.")
+   (name
+    :initarg :name
+    :initform nil
+    :reader command-menu-item-name
+    :documentation "The label of this item.  A divider may have none.")
+   (value
+    :initarg :value
+    :initform nil
+    :reader command-menu-item-value
+    :documentation "A command name, a command table, or NIL."))
+  (:documentation "One entry on a command table's menu."))
+
+(defun menu-item-value (type value)
+  "Return the value stored for a menu item of TYPE."
+  (case type
+    (:command
+     (unless (symbolp value)
+       (error "A command menu item needs a command name."))
+     value)
+    (:menu
+     (if (command-table-p value)
+         value
+         (find-command-table value)))
+    (:divider nil)
+    (t (error "~S is not a menu item type." type))))
+
+(defun add-menu-item-to-command-table (command-table string type value
+                                       &key documentation (errorp t)
+                                       keystroke text-style after)
+  "Add an item to COMMAND-TABLE.
+STRING is the label.  TYPE is :COMMAND, :MENU, or :DIVIDER.  A command
+item's VALUE is a command name.  A menu item's VALUE is a command
+table or its name, and the item opens that table.  A divider ignores
+VALUE.  DOCUMENTATION, KEYSTROKE, TEXT-STYLE, and AFTER are accepted
+and ignored.  Explicit items are not inherited.  With ERRORP true, a
+second item with the same label is an error.  With ERRORP false, that
+item is replaced."
+  (declare (ignore documentation keystroke text-style after))
+  (let ((table (if (command-table-p command-table)
+                   command-table
+                   (find-command-table command-table))))
+    (unless (or (stringp string) (and (eq type :divider) (null string)))
+      (error "A menu item name must be a string."))
+    (let ((existing (and string
+                         (find string (%menu-items table)
+                               :key #'command-menu-item-name
+                               :test #'string=))))
+      (when (and existing errorp)
+        (error "The menu item ~S is already in ~S."
+               string (command-table-name table)))
+      (let ((item (make-instance 'command-menu-item
+                                 :type type
+                                 :name string
+                                 :value (menu-item-value type value))))
+        (if existing
+            (setf (%menu-items table)
+                  (substitute item existing (%menu-items table) :test #'eq))
+            (setf (%menu-items table)
+                  (append (%menu-items table) (list item))))
+        item))))
+
+(defun command-menu-items (command-table)
+  "Return the menu items of COMMAND-TABLE.
+Commands that have a menu string come first, including inherited
+commands, as :COMMAND items.  Explicit items of this table follow.
+Explicit items of an inherited table are not included."
+  (let ((table (if (command-table-p command-table)
+                   command-table
+                   (find-command-table command-table))))
+    (append (mapcar (lambda (pair)
+                      (make-instance 'command-menu-item
+                                     :type :command
+                                     :name (first pair)
+                                     :value (second pair)))
+                    (command-table-menu table))
+            (%menu-items table))))
+
+(define-command-table menu-item-tests)
+(define-command-table menu-item-more)
+
+(defun com-menu-plain ()
+  "A command with a menu string.  The behavior below registers it."
+  nil)
+
+(defun com-menu-extra ()
+  "A command placed on a menu by hand.  The behavior below registers it."
+  nil)
+
+(behavior 'command-menu-items
+  (let ((table (find-command-table 'menu-item-tests))
+        (more (find-command-table 'menu-item-more)))
+    (add-command-to-command-table 'com-menu-plain table :menu "Plain"
+                                  :errorp nil)
+    (add-command-to-command-table 'com-menu-extra more :menu nil :errorp nil)
+    (add-menu-item-to-command-table more "Extra" :command 'com-menu-extra
+                                    :errorp nil)
+    (add-menu-item-to-command-table more "Line" :divider nil :errorp nil)
+    (add-menu-item-to-command-table table "More" :menu more
+                                    :documentation "Further commands."
+                                    :errorp nil)
+    (let ((items (command-menu-items table)))
+      (should= 2 (length items))
+      (should-eq :command (command-menu-item-type (first items)))
+      (should-equal "Plain" (command-menu-item-name (first items)))
+      (should-eq 'com-menu-plain (command-menu-item-value (first items)))
+      (should-eq :menu (command-menu-item-type (second items)))
+      (should-eq more (command-menu-item-value (second items)))
+      (let ((children (command-menu-items more)))
+        (should= 2 (length children))
+        (should-eq :command (command-menu-item-type (first children)))
+        (should-equal "Extra" (command-menu-item-name (first children)))
+        (should-eq 'com-menu-extra (command-menu-item-value (first children)))
+        (should-eq :divider (command-menu-item-type (second children)))
+        (should-be-null (command-menu-item-value (second children)))))
+    (should-equal '(("Plain" com-menu-plain)) (command-table-menu table))
+    (define-command-table menu-item-child :inherit-from (menu-item-tests))
+    (let ((child-items (command-menu-items
+                        (find-command-table 'menu-item-child))))
+      (should= 1 (length child-items))
+      (should-equal "Plain" (command-menu-item-name (first child-items))))
+    (should-be-true
+     (handler-case
+         (progn
+           (add-menu-item-to-command-table table "More" :divider nil)
+           nil)
+       (error () t)))
+    (should-be-true
+     (handler-case
+         (progn
+           (add-menu-item-to-command-table table "Bad" :function nil)
+           nil)
+       (error () t)))))

@@ -41,6 +41,8 @@
         :FitzCLIM/medium/drawing)
   (:export :cell-output-record
            :filling-output
+           :format-graph-from-root
+           :format-graph-from-roots
            :formatting-cell
            :formatting-column
            :formatting-item-list
@@ -694,3 +696,317 @@ CONTINUATION does not leave a trailing blank."
       (write-string "one two" stream))
     (let ((two (find-recorded-text (stream-output-history stream) "two")))
       (should= 0 (nth-value 1 (output-record-sheet-origin two))))))
+
+(defclass graph-node ()
+  ((record
+    :initarg :record
+    :reader graph-node-record
+    :documentation "The output of this node.")
+   (children
+    :initarg :children
+    :reader graph-node-children
+    :documentation "The child nodes, from first to last."))
+  (:documentation "One node of a formatted graph."))
+
+(defun capture-graph-output (stream printer object)
+  "Record PRINTER's output for OBJECT and return that record.
+The record is not added to STREAM.  The cursor is restored."
+  (let ((record (make-instance 'standard-sequence-output-record))
+        (saved-x (stream-cursor-x stream))
+        (saved-y (stream-cursor-y stream))
+        (parent (stream-current-output-record stream)))
+    (setf (output-record-parent record) parent)
+    (setf (stream-current-output-record stream) record)
+    (setf (stream-cursor-position stream) (output-record-sheet-origin record))
+    (unwind-protect
+         (funcall printer object stream)
+      (setf (stream-current-output-record stream) parent)
+      (setf (output-record-parent record) nil)
+      (setf (stream-cursor-position stream) (values saved-x saved-y)))
+    record))
+
+(defun layout-graph-node (node x y orientation generation-gap sibling-gap center)
+  "Place NODE at X and Y.  Return the width and height of its subtree.
+:HORIZONTAL stacks children to the right.  :VERTICAL places them below.
+CENTER, when true, centers the node on its children."
+  (let* ((record (graph-node-record node))
+         (node-width (bounding-rectangle-width record))
+         (node-height (bounding-rectangle-height record)))
+    (set-output-record-position record x y)
+    (cond
+      ((null (graph-node-children node))
+       (values node-width node-height))
+      ((eq orientation :vertical)
+       (let ((child-y (+ y node-height generation-gap))
+             (child-x x)
+             (span 0))
+         (dolist (child (graph-node-children node))
+           (multiple-value-bind (width height)
+               (layout-graph-node child child-x child-y orientation
+                                  generation-gap sibling-gap center)
+             (incf child-x (+ width sibling-gap))
+             (setf span (max span height))))
+         (let ((children-width (- child-x sibling-gap x)))
+           (when center
+             (set-output-record-position
+              record
+              (+ x (/ (max 0 (- children-width node-width)) 2))
+              y))
+           (values (max node-width children-width)
+                   (+ node-height generation-gap span)))))
+      (t
+       (let ((child-x (+ x node-width generation-gap))
+             (child-y y)
+             (span 0))
+         (dolist (child (graph-node-children node))
+           (multiple-value-bind (width height)
+               (layout-graph-node child child-x child-y orientation
+                                  generation-gap sibling-gap center)
+             (incf child-y (+ height sibling-gap))
+             (setf span (max span width))))
+         (let ((children-height (- child-y sibling-gap y)))
+           (when center
+             (set-output-record-position
+              record
+              x
+              (+ y (/ (max 0 (- children-height node-height)) 2))))
+           (values (+ node-width generation-gap span)
+                   (max node-height children-height))))))))
+
+(defun layout-graph-roots (nodes x y orientation generation-gap sibling-gap center)
+  "Place NODES as the roots of one graph.  Return the width and height.
+:VERTICAL lays the roots from left to right.  :HORIZONTAL stacks them."
+  (let ((cursor-x x)
+        (cursor-y y)
+        (cross 0))
+    (dolist (node nodes)
+      (multiple-value-bind (node-width node-height)
+          (layout-graph-node node cursor-x cursor-y orientation
+                             generation-gap sibling-gap center)
+        (if (eq orientation :vertical)
+            (progn
+              (incf cursor-x (+ node-width sibling-gap))
+              (setf cross (max cross node-height)))
+            (progn
+              (incf cursor-y (+ node-height sibling-gap))
+              (setf cross (max cross node-width))))))
+    (if nodes
+        (if (eq orientation :vertical)
+            (values (- cursor-x sibling-gap x) cross)
+            (values cross (- cursor-y sibling-gap y)))
+        (values 0 0))))
+
+(defun graph-edge-points (parent child orientation)
+  "Return the endpoints of the edge from PARENT to CHILD.
+The coordinates are in the graph record."
+  (multiple-value-bind (left-1 top-1 right-1 bottom-1)
+      (bounding-rectangle* (graph-node-record parent))
+    (multiple-value-bind (left-2 top-2 right-2 bottom-2)
+        (bounding-rectangle* (graph-node-record child))
+      (if (eq orientation :vertical)
+          (values (/ (+ left-1 right-1) 2) bottom-1
+                  (/ (+ left-2 right-2) 2) top-2)
+          (values right-1 (/ (+ top-1 bottom-1) 2)
+                  left-2 (/ (+ top-2 bottom-2) 2))))))
+
+(defun add-graph-nodes (graph nodes)
+  "Add every node record under GRAPH."
+  (labels ((walk (node)
+             (add-output-record (graph-node-record node) graph)
+             (map nil #'walk (graph-node-children node))))
+    (map nil #'walk nodes))
+  graph)
+
+(defun draw-graph-edges (stream graph nodes orientation start-x start-y)
+  "Draw an edge from each node to its children.
+START-X and START-Y are the graph origin on STREAM."
+  (let ((parent (stream-current-output-record stream)))
+    (setf (stream-current-output-record stream) graph)
+    (unwind-protect
+         (labels ((walk (node)
+                    (dolist (child (graph-node-children node))
+                      (multiple-value-bind (x1 y1 x2 y2)
+                          (graph-edge-points node child orientation)
+                        (draw-line* stream
+                                    (+ start-x x1) (+ start-y y1)
+                                    (+ start-x x2) (+ start-y y2)))
+                      (walk child))))
+           (map nil #'walk nodes))
+      (setf (stream-current-output-record stream) parent))))
+
+(defun format-graph-from-roots (root-objects object-printer inferior-producer
+                                &key (stream *standard-output*)
+                                  (orientation :horizontal)
+                                  cutoff-depth
+                                  merge-duplicates
+                                  (duplicate-test #'eql)
+                                  (generation-separation 10)
+                                  (within-generation-separation 4)
+                                  center-nodes)
+  "Lay out ROOT-OBJECTS as a graph on STREAM.
+OBJECT-PRINTER is a function of an object and a stream.  It draws one
+node.  INFERIOR-PRODUCER is a function of an object and returns its
+children.  :HORIZONTAL places children to the right.  :VERTICAL places
+them below.  CUTOFF-DEPTH limits the depth, and the roots are depth 1.
+MERGE-DUPLICATES skips an object that was already drawn, and the skip
+does not draw an edge back to the first copy.  CENTER-NODES centers a
+parent across its children.  The cursor's x returns to where it
+started, and its y moves below the graph."
+  (unless (member orientation '(:horizontal :vertical))
+    (error "~S is not a graph orientation." orientation))
+  (let ((seen nil)
+        (nodes nil))
+    (labels ((build (object depth)
+               (when (and cutoff-depth (> depth cutoff-depth))
+                 (return-from build nil))
+               (when (and merge-duplicates
+                          (member object seen :test duplicate-test))
+                 (return-from build nil))
+               (when merge-duplicates
+                 (push object seen))
+               (let ((record (capture-graph-output stream object-printer object)))
+                 (make-instance
+                  'graph-node
+                  :record record
+                  :children (loop for child in (funcall inferior-producer object)
+                                  for node = (build child (1+ depth))
+                                  when node
+                                    collect node)))))
+      (dolist (root root-objects)
+        (let ((node (build root 1)))
+          (when node
+            (push node nodes))))
+      (setf nodes (nreverse nodes))
+      (unless nodes
+        (return-from format-graph-from-roots nil))
+      (let ((start-x (stream-cursor-x stream))
+            (start-y (stream-cursor-y stream))
+            (graph (make-instance 'standard-sequence-output-record)))
+        (multiple-value-bind (width height)
+            (layout-graph-roots nodes 0 0 orientation
+                                generation-separation
+                                within-generation-separation
+                                center-nodes)
+          (declare (ignore width))
+          (add-graph-nodes graph nodes)
+          (multiple-value-bind (origin-x origin-y)
+              (output-record-sheet-origin (stream-current-output-record stream))
+            (set-output-record-position graph
+                                        (- start-x origin-x)
+                                        (- start-y origin-y)))
+          (stream-add-output-record stream graph)
+          (draw-graph-edges stream graph nodes orientation start-x start-y)
+          (setf (stream-cursor-position stream)
+                (values start-x (+ start-y height)))
+          graph)))))
+
+(defun format-graph-from-root (root-object object-printer inferior-producer
+                               &rest keys
+                               &key stream orientation cutoff-depth
+                                 merge-duplicates duplicate-test
+                                 generation-separation
+                                 within-generation-separation center-nodes)
+  "Lay out ROOT-OBJECT and the graph below it.
+The keyword arguments are the same as FORMAT-GRAPH-FROM-ROOTS."
+  (declare (ignore stream orientation cutoff-depth merge-duplicates
+                   duplicate-test generation-separation
+                   within-generation-separation center-nodes))
+  (apply #'format-graph-from-roots
+         (list root-object) object-printer inferior-producer keys))
+
+(defun count-recorded-text (record string)
+  "Return how many text records under RECORD show STRING."
+  (labels ((walk (node)
+             (+ (if (and (typep node 'text-displayed-output-record)
+                         (equal (displayed-text node) string))
+                    1
+                    0)
+                (reduce #'+ (output-record-children node)
+                        :key #'walk :initial-value 0))))
+    (walk record)))
+
+(defun find-recorded-line (record)
+  "Return the first line record under RECORD."
+  (labels ((walk (node)
+             (cond
+               ((typep node 'line-displayed-output-record) node)
+               (t (some #'walk (output-record-children node))))))
+    (walk record)))
+
+(defun graph-children (object)
+  "Return the children of a small test graph."
+  (cond
+    ((equal object "A") '("B" "C"))
+    ((or (equal object "B") (equal object "C")) '("D"))
+    (t nil)))
+
+(behavior 'format-graph-from-roots
+  (let ((stream (make-instance 'output-recording-stream))
+        (printer (lambda (object stream) (write-string object stream))))
+    (format-graph-from-roots '("A") printer #'graph-children
+                             :stream stream
+                             :generation-separation 10
+                             :within-generation-separation 4)
+    (let ((bee (find-recorded-text (stream-output-history stream) "B"))
+          (cee (find-recorded-text (stream-output-history stream) "C"))
+          (line (find-recorded-line (stream-output-history stream))))
+      (should= (+ 36/5 10) (nth-value 0 (output-record-sheet-origin bee)))
+      (should= 0 (nth-value 1 (output-record-sheet-origin bee)))
+      (should= (+ 36/5 10) (nth-value 0 (output-record-sheet-origin cee)))
+      (should= 16 (nth-value 1 (output-record-sheet-origin cee)))
+      (multiple-value-bind (x y) (output-record-position line)
+        (should= 36/5 (+ x (line-record-x1 line)))
+        (should= -18/5 (+ y (line-record-y1 line)))
+        (should= (+ 36/5 10) (+ x (line-record-x2 line)))
+        (should= -18/5 (+ y (line-record-y2 line)))))
+    (should= 0 (stream-cursor-x stream))
+    (should= 28 (stream-cursor-y stream))
+    (should= 2 (count-recorded-text (stream-output-history stream) "D")))
+  (let ((stream (make-instance 'output-recording-stream))
+        (printer (lambda (object stream) (write-string object stream))))
+    (format-graph-from-roots '("A") printer #'graph-children
+                             :stream stream
+                             :merge-duplicates t
+                             :duplicate-test #'equal)
+    (should= 1 (count-recorded-text (stream-output-history stream) "D")))
+  (let ((stream (make-instance 'output-recording-stream))
+        (printer (lambda (object stream) (write-string object stream))))
+    (format-graph-from-root "A" printer #'graph-children
+                            :stream stream
+                            :cutoff-depth 1)
+    (should-be-null (find-recorded-text (stream-output-history stream) "B"))
+    (should-be-true (find-recorded-text (stream-output-history stream) "A")))
+  (let ((stream (make-instance 'output-recording-stream))
+        (printer (lambda (object stream) (write-string object stream))))
+    (format-graph-from-roots '("A") printer #'graph-children
+                             :stream stream
+                             :orientation :vertical
+                             :generation-separation 10
+                             :within-generation-separation 4)
+    (let ((bee (find-recorded-text (stream-output-history stream) "B"))
+          (cee (find-recorded-text (stream-output-history stream) "C")))
+      (should= 0 (nth-value 0 (output-record-sheet-origin bee)))
+      (should= 22 (nth-value 1 (output-record-sheet-origin bee)))
+      (should= (+ 36/5 4) (nth-value 0 (output-record-sheet-origin cee)))
+      (should= 22 (nth-value 1 (output-record-sheet-origin cee)))))
+  (let ((stream (make-instance 'output-recording-stream))
+        (printer (lambda (object stream) (write-string object stream))))
+    (format-graph-from-roots '("A") printer #'graph-children
+                             :stream stream
+                             :center-nodes t
+                             :generation-separation 10
+                             :within-generation-separation 4)
+    (let ((aye (find-recorded-text (stream-output-history stream) "A")))
+      (should= 8 (nth-value 1 (output-record-sheet-origin aye)))))
+  (let ((stream (make-instance 'output-recording-stream)))
+    (should-be-true
+     (handler-case
+         (progn
+           (format-graph-from-roots '("A")
+                                    (lambda (object stream)
+                                      (write-string object stream))
+                                    #'graph-children
+                                    :stream stream
+                                    :orientation :diagonal)
+           nil)
+       (error () t)))))

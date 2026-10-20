@@ -40,6 +40,7 @@
         :FitzCLIM/medium
         :FitzCLIM/medium/drawing)
   (:export :cell-output-record
+           :filling-output
            :formatting-cell
            :formatting-item-list
            :formatting-row
@@ -472,3 +473,117 @@ and its y is the baseline just under the border."
       (should= (+ 12 2) (rectangle-record-height border)))
     (should= 0 (stream-cursor-x stream))
     (should= 13 (stream-cursor-y stream))))
+
+(defvar *filling-stream* nil
+  "The stream whose text is being wrapped, or NIL.")
+
+(defvar *filling-width* nil
+  "The x at which *FILLING-STREAM* starts a new line.")
+
+(defvar *filling-word* nil
+  "The word being collected for *FILLING-STREAM*.")
+
+(defvar *filling-break* nil
+  "True when a space is waiting before *FILLING-WORD*.")
+
+(defvar *filling-pass* nil
+  "True while wrapped text is being written through to the stream.")
+
+(defun filling-this-stream? (stream)
+  "Return true if STREAM should wrap the text being written."
+  (and *filling-stream*
+       (eq stream *filling-stream*)
+       (not *filling-pass*)))
+
+(defun filling-finish-word (stream)
+  "Write the collected word, breaking the line when it does not fit.
+A space before the word becomes the line break.  A word that is wider
+than the line is written anyway."
+  (when (plusp (length *filling-word*))
+    (let* ((word (copy-seq *filling-word*))
+           (word-width (nth-value 0 (text-metrics (stream-text-style stream) word)))
+           (space-width (if *filling-break*
+                            (nth-value 0 (text-metrics (stream-text-style stream) " "))
+                            0)))
+      (when (and *filling-break*
+                 (> (+ (stream-cursor-x stream) space-width word-width)
+                    *filling-width*)
+                 (> (stream-cursor-x stream) (stream-left-margin stream)))
+        (terpri stream)
+        (setf *filling-break* nil))
+      (let ((*filling-pass* t))
+        (when *filling-break*
+          (write-char #\Space stream))
+        (write-string word stream)))
+    (setf (fill-pointer *filling-word*) 0
+          *filling-break* nil)))
+
+(defun fill-text (stream text)
+  "Wrap TEXT onto STREAM.  A space or a newline can end a line."
+  (loop for character across text
+        do (cond
+             ((char= character #\Newline)
+              (filling-finish-word stream)
+              (setf *filling-break* nil)
+              (terpri stream))
+             ((char= character #\Space)
+              (filling-finish-word stream)
+              (setf *filling-break* t))
+             (t
+              (vector-push-extend character *filling-word*)))))
+
+(defmethod sb-gray:stream-write-char :around
+    ((stream output-recording-stream) character)
+  (if (filling-this-stream? stream)
+      (fill-text stream (string character))
+      (call-next-method)))
+
+(defmethod sb-gray:stream-write-string :around
+    ((stream output-recording-stream) string &optional (start 0) end)
+  (if (filling-this-stream? stream)
+      (fill-text stream (subseq string start (or end (length string))))
+      (call-next-method)))
+
+(defun invoke-filling-output (stream continuation &key fill-width)
+  "Run CONTINUATION and wrap its text to FILL-WIDTH.
+FILL-WIDTH defaults to the width of eighty n's.  A space ends a line
+when the next word would pass FILL-WIDTH.  A space at the end of
+CONTINUATION does not leave a trailing blank."
+  (let ((*filling-stream* stream)
+        (*filling-width* (or fill-width
+                             (* 80 (nth-value 0
+                                              (text-metrics
+                                               (stream-text-style stream) "n")))))
+        (*filling-word* (make-array 16 :element-type 'character
+                                       :fill-pointer 0 :adjustable t))
+        (*filling-break* nil)
+        (*filling-pass* nil))
+    (unwind-protect
+         (funcall continuation)
+      (filling-finish-word stream)
+      (setf *filling-break* nil))))
+
+(defmacro filling-output ((stream &key fill-width) &body body)
+  "Run BODY and wrap its text to FILL-WIDTH."
+  (let ((stream-var (gensym "STREAM")))
+    `(let ((,stream-var ,stream))
+       (invoke-filling-output
+        ,stream-var
+        (lambda () ,@body)
+        :fill-width ,fill-width))))
+
+(behavior 'filling-output
+  (let ((stream (make-instance 'output-recording-stream)))
+    (filling-output (stream :fill-width 252/5)
+      (write-string "one two three" stream))
+    (let ((two (find-recorded-text (stream-output-history stream) "two"))
+          (three (find-recorded-text (stream-output-history stream) "three")))
+      (should= 144/5 (nth-value 0 (output-record-sheet-origin two)))
+      (should= 0 (nth-value 1 (output-record-sheet-origin two)))
+      (should= 0 (nth-value 0 (output-record-sheet-origin three)))
+      (should= 12 (nth-value 1 (output-record-sheet-origin three)))))
+  (let ((stream (make-instance 'output-recording-stream)))
+    (filling-output (stream :fill-width 400)
+      (write-string "one two" stream))
+    (let ((two (find-recorded-text (stream-output-history stream) "two")))
+      (should= 0 (nth-value 1 (output-record-sheet-origin two))))))

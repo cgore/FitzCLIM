@@ -48,6 +48,7 @@
                 :widget)
   (:export :*accept-input-editor*
            :*accepting-values-acceptor*
+           :*completion-possibilities*
            :*input-context*
            :*pointer-documentation-view*
            :+gadget-view+
@@ -343,6 +344,11 @@ ACCEPTING-VALUES binds it.")
 ACCEPT calls it around the presentation method.  The continuation
 receives the stream to read.  NIL reads the original stream.  The input
 editor sets it.")
+
+(defvar *completion-possibilities* nil
+  "Strings the input editor may complete, or NIL.
+ACCEPT of COMPLETION binds this to the printed elements.  A tab in the
+input editor extends the buffer from these strings.")
 
 (defun accept (type &key (stream *standard-input*)
                       (view +textual-view+)

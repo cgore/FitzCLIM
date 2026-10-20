@@ -46,10 +46,12 @@
                 :expression
                 :numeric-presentation-subtypep)
   (:import-from :FitzCLIM/presentation/present
+                :*completion-possibilities*
                 :*presentation-type-histories*
                 :read-token
                 :whitespace?)
-  (:export :sequence-enumerated))
+  (:export :completion
+           :sequence-enumerated))
 (in-package :FitzCLIM/presentation/builtins)
 
 (defun parse-failure (control &rest arguments)
@@ -411,7 +413,12 @@ The longest name that matches the tokens is chosen."
   (princ (funcall (function-for value-key) object) stream))
 
 (define-presentation-method accept ((type completion) stream view &key)
-  (let* ((token (read-token stream))
+  (let* ((*completion-possibilities*
+           (map 'list
+                (lambda (element)
+                  (princ-to-string (funcall (function-for value-key) element)))
+                sequence))
+         (token (read-token stream))
          (index (position token sequence
                           :test (lambda (text element)
                                   (funcall (function-for test)

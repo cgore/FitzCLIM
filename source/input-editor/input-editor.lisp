@@ -36,7 +36,8 @@
   (:use :common-lisp
         :sigma/behave
         :FitzCLIM/presentation
-        :FitzCLIM/presentation/present)
+        :FitzCLIM/presentation/present
+        :FitzCLIM/presentation/builtins)
   (:export :input-editing-stream
            :invoke-with-input-editing
            :with-input-editing))
@@ -89,10 +90,51 @@ buffer and throws to INPUT-EDITOR-RESCAN."
              (throw 'input-editor-rescan nil)))
           ((activation-character? gesture)
            (return :eof))
+          ((and (char= gesture #\Tab) *completion-possibilities*)
+           (complete-editor-buffer stream))
           (t
            (vector-push-extend gesture buffer)
            (incf (input-editor-scan stream))
            (return gesture)))))))
+
+(defun completion-prefix (strings)
+  "Return the prefix shared by STRINGS, in the first string's case."
+  (let ((limit (reduce #'min strings :key #'length)))
+    (loop for index from 0 below limit
+          for character = (char (first strings) index)
+          while (every (lambda (string)
+                         (char-equal character (char string index)))
+                       strings)
+          collect character into characters
+          finally (return (coerce characters 'string)))))
+
+(defun replace-editor-buffer (stream text)
+  "Replace STREAM's buffer with TEXT."
+  (let ((buffer (input-editor-buffer stream)))
+    (setf (fill-pointer buffer) 0)
+    (loop for character across text
+          do (vector-push-extend character buffer))
+    buffer))
+
+(defun complete-editor-buffer (stream)
+  "Extend STREAM's buffer from *COMPLETION-POSSIBILITIES* and rescan.
+One match replaces the buffer.  Several matches extend it to the shared
+prefix.  No match leaves the buffer as it is."
+  (let* ((text (copy-seq (input-editor-buffer stream)))
+         (matches (remove-if-not
+                   (lambda (possibility)
+                     (and (>= (length possibility) (length text))
+                          (string-equal text possibility :end2 (length text))))
+                   *completion-possibilities*)))
+    (cond
+      ((null matches) nil)
+      ((null (rest matches))
+       (replace-editor-buffer stream (first matches)))
+      (t
+       (let ((prefix (completion-prefix matches)))
+         (when (> (length prefix) (length text))
+           (replace-editor-buffer stream prefix))))))
+  (throw 'input-editor-rescan nil))
 
 (defmethod sb-gray:stream-read-char ((stream input-editing-stream))
   (take-editor-gesture stream))
@@ -153,4 +195,20 @@ restarts BODY."
   (let ((source (make-string-input-stream "Ada")))
     (with-input-editing (source)
       (should-equal "Ada" (accept 'string :stream source))
-      (should-be-true (typep source 'input-editing-stream)))))
+      (should-be-true (typep source 'input-editing-stream))))
+  (with-input-from-string (stream (format nil "be~C" #\Tab))
+    (should-equal "Bea"
+                  (accept '(completion ("Ada" "Adam" "Bea")) :stream stream)))
+  (with-input-from-string (stream (format nil "ad~C" #\Tab))
+    (should-equal "Ada"
+                  (accept '(completion ("Ada" "Adam" "Bea")) :stream stream)))
+  (with-input-from-string (stream (format nil "ca~Cgo" #\Tab))
+    (should-equal "Cargo"
+                  (accept '(completion ("Cargo" "Cart")) :stream stream)))
+  (with-input-from-string (stream (format nil "zz~C" #\Tab))
+    (should-be-true
+     (handler-case
+         (progn
+           (accept '(completion ("Ada" "Bea")) :stream stream)
+           nil)
+       (error () t)))))

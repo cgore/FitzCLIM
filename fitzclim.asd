@@ -151,7 +151,7 @@
       ((:file "opengl")))
      (:module "port"
       :depends-on ("sheet" "geometry" "frame" "event" "presentation"
-                   "opengl" "pane")
+                   "command" "output-record" "opengl" "pane")
       :components
       ((:file "port")))
      (:module "windows"

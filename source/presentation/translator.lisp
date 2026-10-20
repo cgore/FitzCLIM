@@ -48,9 +48,11 @@
            :call-presentation-translator
            :command-from-presentation
            :define-presentation-action
+           :define-drag-and-drop-translator
            :define-presentation-to-command-translator
            :define-presentation-translator
            :document-presentation-translator
+           :presentation-translator-destination-type
            :execute-presentation-gesture
            :find-applicable-translators
            :presentation-translator
@@ -109,10 +111,17 @@
     :initarg :match-context
     :initform nil
     :reader presentation-translator-match-context
-    :documentation "True when the presentation type must match the input context."))
+    :documentation "True when the presentation type must match the input context.")
+   (destination-type
+    :initarg :destination-type
+    :initform nil
+    :reader presentation-translator-destination-type
+    :documentation "The presentation type a drag must be dropped on, or NIL.
+A translator with a destination type is a drag.  A click does not run it."))
   (:documentation
    "A way to turn a presentation into an object of another type.
-   A command translator produces a command."))
+   A command translator produces a command.  A drag translator also
+   names the presentation type that can receive the drop."))
 
 (defvar *presentation-translators* nil
   "Translators, newest first.")
@@ -139,7 +148,7 @@
 (defmacro define-presentation-translator
     (name (from-type to-type command-table
            &key gesture tester documentation menu (priority 0)
-             command match-context)
+             command match-context destination-type)
      arglist &body body)
   "Define a translator named NAME from FROM-TYPE to TO-TYPE.
 COMMAND-TABLE is a command table name, or NIL for every table.
@@ -147,7 +156,9 @@ GESTURE is a gesture name or spec.  TESTER is NIL, a function, or
 ((arguments) body).  COMMAND, when supplied, is a command name: BODY
 returns the command's argument list.  MATCH-CONTEXT true applies the
 translator only when the presentation's type is a subtype of the input
-context.  Redefining NAME replaces the old translator."
+context.  DESTINATION-TYPE makes NAME a drag translator: a click does
+not run it, and a drop must land on that presentation type.
+Redefining NAME replaces the old translator."
   `(progn
      ,@(when command-table
          `((find-command-table ',command-table)))
@@ -164,6 +175,7 @@ context.  Redefining NAME replaces the old translator."
                                 :priority ,priority
                                 :command-name ',command
                                 :match-context ,match-context
+                                :destination-type ',destination-type
                                 :body ,(translator-lambda arglist body))
                  (remove ',name *presentation-translators*
                          :key #'presentation-translator-name)))
@@ -202,6 +214,25 @@ The value of the translator is NIL."
      ,arglist
      ,@body
      nil))
+
+(defmacro define-drag-and-drop-translator
+    (name (from-type destination-type command-name command-table
+           &key (gesture :select) tester documentation (priority 0))
+     arglist &body body)
+  "Define a translator that drags FROM-TYPE onto DESTINATION-TYPE.
+BODY receives the source object and the destination object and returns
+the argument list of COMMAND-NAME.  GESTURE defaults to :SELECT and is
+matched against the press that started the drag."
+  `(define-presentation-translator ,name
+       (,from-type (command :command-table ,command-table) ,command-table
+        :gesture ,gesture
+        :tester ,tester
+        :documentation ,documentation
+        :priority ,priority
+        :command ,command-name
+        :destination-type ,destination-type)
+     ,arglist
+     ,@body))
 
 (defun command-table-ancestor? (table ancestor)
   "Return true if TABLE is ANCESTOR or inherits from ANCESTOR."
@@ -269,7 +300,8 @@ matches only a missing event."
   "Return the translators that apply to PRESENTATION, highest priority first."
   (let ((matches nil))
     (dolist (translator *presentation-translators*)
-      (when (and (translator-available? translator command-table)
+      (when (and (null (presentation-translator-destination-type translator))
+                 (translator-available? translator command-table)
                  (translator-gesture-matches? translator event)
                  (translator-type-matches? translator presentation context-type)
                  (translator-tester-passes? translator presentation context-type
@@ -278,20 +310,33 @@ matches only a missing event."
     (stable-sort matches #'> :key #'presentation-translator-priority)))
 
 (defun call-presentation-translator (translator presentation context-type
-                                      &key frame event window x y)
+                                      &key frame event window x y destination)
   "Run TRANSLATOR.  Return the object and its presentation type.
 A command translator returns a list of the command name and the
-arguments BODY produced."
+arguments BODY produced.  DESTINATION, when supplied, is the
+presentation dropped on.  BODY then receives that object's value after
+the source object."
   (multiple-value-bind (object new-type)
-      (funcall (presentation-translator-body translator)
-               (presentation-object presentation)
-               :presentation presentation
-               :context-type context-type
-               :frame frame
-               :event event
-               :window window
-               :x x
-               :y y)
+      (if destination
+          (funcall (presentation-translator-body translator)
+                   (presentation-object presentation)
+                   (presentation-object destination)
+                   :presentation presentation
+                   :context-type context-type
+                   :frame frame
+                   :event event
+                   :window window
+                   :x x
+                   :y y)
+          (funcall (presentation-translator-body translator)
+                   (presentation-object presentation)
+                   :presentation presentation
+                   :context-type context-type
+                   :frame frame
+                   :event event
+                   :window window
+                   :x x
+                   :y y))
     (let ((result-type
             (or new-type
                 (if (presentation-translator-match-context translator)
@@ -301,6 +346,49 @@ arguments BODY produced."
           (values (cons (presentation-translator-command-name translator) object)
                   result-type)
           (values object result-type)))))
+
+(defun find-drag-translators (presentation command-table event
+                              &key destination frame window x y)
+  "Return drag translators for PRESENTATION, highest priority first.
+A drag translator names a destination type.  DESTINATION nil asks
+whether a drag can start.  A presentation asks whether that
+presentation can receive the drop.  EVENT is the press that started
+the drag, because a release does not match a press gesture."
+  (let ((matches nil))
+    (dolist (translator *presentation-translators*)
+      (when (and (presentation-translator-destination-type translator)
+                 (translator-available? translator command-table)
+                 (translator-gesture-matches? translator event)
+                 (presentation-subtypep
+                  (presentation-type presentation)
+                  (presentation-translator-from-type translator))
+                 (or (null destination)
+                     (presentation-subtypep
+                      (presentation-type destination)
+                      (presentation-translator-destination-type translator)))
+                 (translator-tester-passes? translator presentation
+                                            'command frame event window x y))
+        (push translator matches)))
+    (stable-sort matches #'> :key #'presentation-translator-priority)))
+
+(defun command-from-drag (source destination event command-table
+                          &key frame window x y)
+  "Return the command produced by dropping SOURCE on DESTINATION, or NIL.
+EVENT is the press that started the drag."
+  (let ((translators (find-drag-translators source command-table event
+                                            :destination destination
+                                            :frame frame
+                                            :window window
+                                            :x x
+                                            :y y)))
+    (when translators
+      (call-presentation-translator (first translators) source 'command
+                                    :destination destination
+                                    :event event
+                                    :frame frame
+                                    :window window
+                                    :x x
+                                    :y y))))
 
 (defun document-presentation-translator (translator presentation context-type
                                           &key frame event window x y

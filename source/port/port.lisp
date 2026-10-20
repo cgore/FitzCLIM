@@ -383,7 +383,8 @@ A press that names a command is returned at once and cancels a drag.
 A press that names a drag translator arms that drag and highlights its
 presentation.  A release of the same button clears that highlight.  On
 another presentation it may return the drag's command.  Motion leaves
-an armed drag in place."
+an armed drag in place.  A key press whose character is a menu
+keystroke returns that command."
   (cond
     ((typep event 'pointer-button-press-event)
      (let ((command (command-from-pointer-event frame event)))
@@ -426,6 +427,11 @@ an armed drag in place."
                                 :window (event-sheet event)
                                 :x (pointer-event-x event)
                                 :y (pointer-event-y event)))))))
+    ((and (typep event 'key-press-event)
+          (keyboard-event-character event)
+          (frame-command-table frame))
+     (command-for-menu-keystroke (frame-command-table frame)
+                                 (keyboard-event-character event)))
     (t nil)))
 
 (defun read-port-frame-command (frame)
@@ -648,6 +654,45 @@ READ-PORT-FRAME-COMMAND use it in place of a window system."))
       (remhash frame *pointer-drags*)
       (forget-mirror pane)
       (forget-mirror-frame 51)
+      (forget-frame-port frame))))
+
+(define-command-table keystroke-tests)
+
+(define-command (com-keystroke-note :command-table keystroke-tests :name t)
+    ()
+  "A command reached from a menu keystroke."
+  nil)
+
+(behavior 'menu-keystroke
+  (add-menu-item-to-command-table 'keystroke-tests "Note"
+                                  :command 'com-keystroke-note
+                                  :keystroke #\n
+                                  :errorp nil)
+  (let* ((port (make-instance 'event-probe-port))
+         (frame (make-instance 'application-frame
+                               :name 'keyed
+                               :pretty-name "Keyed"
+                               :command-table (find-command-table 'keystroke-tests)))
+         (pane (make-instance 'application-pane)))
+    (remember-mirror pane 71)
+    (setf (mirror-frame 71) frame)
+    (setf (frame-port frame) port)
+    (unwind-protect
+         (progn
+           (enqueue-event pane (make-instance 'key-press-event
+                                              :sheet pane
+                                              :character #\n))
+           (should-eq 'com-keystroke-note (read-port-frame-command frame))
+           (enqueue-event pane (make-instance 'key-press-event
+                                              :sheet pane
+                                              :character #\x))
+           (should-be-null (read-port-frame-command frame))
+           (enqueue-event pane (make-instance 'key-release-event
+                                              :sheet pane
+                                              :character #\n))
+           (should-be-null (read-port-frame-command frame)))
+      (forget-mirror pane)
+      (forget-mirror-frame 71)
       (forget-frame-port frame))))
 
 (defun sheet-port (sheet)

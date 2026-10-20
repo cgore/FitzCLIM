@@ -44,7 +44,9 @@
            :command-line-name
            :command-line-name-from-symbol
            :command-menu
+           :command-for-menu-keystroke
            :command-menu-item
+           :command-menu-item-keystroke
            :command-menu-item-name
            :command-menu-item-type
            :command-menu-item-value
@@ -330,7 +332,12 @@ appear, in the order MAP-OVER-COMMAND-TABLE-COMMANDS visits them."
     :initarg :value
     :initform nil
     :reader command-menu-item-value
-    :documentation "A command name, a command table, or NIL."))
+    :documentation "A command name, a command table, or NIL.")
+   (keystroke
+    :initarg :keystroke
+    :initform nil
+    :reader command-menu-item-keystroke
+    :documentation "A character that runs this item, or NIL."))
   (:documentation "One entry on a command table's menu."))
 
 (defun menu-item-value (type value)
@@ -354,11 +361,14 @@ appear, in the order MAP-OVER-COMMAND-TABLE-COMMANDS visits them."
 STRING is the label.  TYPE is :COMMAND, :MENU, or :DIVIDER.  A command
 item's VALUE is a command name.  A menu item's VALUE is a command
 table or its name, and the item opens that table.  A divider ignores
-VALUE.  DOCUMENTATION, KEYSTROKE, TEXT-STYLE, and AFTER are accepted
-and ignored.  Explicit items are not inherited.  With ERRORP true, a
-second item with the same label is an error.  With ERRORP false, that
-item is replaced."
-  (declare (ignore documentation keystroke text-style after))
+VALUE.  KEYSTROKE is a character that runs a command item, or NIL.
+DOCUMENTATION, TEXT-STYLE, and AFTER are accepted and ignored.
+Explicit items are not inherited.  With ERRORP true, a second item
+with the same label is an error.  With ERRORP false, that item is
+replaced."
+  (declare (ignore documentation text-style after))
+  (unless (or (null keystroke) (characterp keystroke))
+    (error "A menu keystroke must be a character or NIL."))
   (let ((table (if (command-table-p command-table)
                    command-table
                    (find-command-table command-table))))
@@ -374,7 +384,8 @@ item is replaced."
       (let ((item (make-instance 'command-menu-item
                                  :type type
                                  :name string
-                                 :value (menu-item-value type value))))
+                                 :value (menu-item-value type value)
+                                 :keystroke keystroke)))
         (if existing
             (setf (%menu-items table)
                   (substitute item existing (%menu-items table) :test #'eq))
@@ -398,6 +409,29 @@ Explicit items of an inherited table are not included."
                     (command-table-menu table))
             (%menu-items table))))
 
+(defun command-for-menu-keystroke (command-table gesture)
+  "Return the command name whose menu item uses GESTURE, or NIL.
+GESTURE is a character.  The comparison is CHAR-EQUAL.  Submenus are
+searched.  A table is visited once."
+  (labels ((search-table (candidate seen)
+             (let ((table (if (command-table-p candidate)
+                              candidate
+                              (find-command-table candidate))))
+               (unless (gethash table seen)
+                 (setf (gethash table seen) t)
+                 (dolist (item (command-menu-items table))
+                   (case (command-menu-item-type item)
+                     (:command
+                      (let ((key (command-menu-item-keystroke item)))
+                        (when (and (characterp key)
+                                   (characterp gesture)
+                                   (char-equal key gesture))
+                          (return-from command-for-menu-keystroke
+                            (command-menu-item-value item)))))
+                     (:menu
+                      (search-table (command-menu-item-value item) seen))))))))
+    (search-table command-table (make-hash-table :test #'eq))))
+
 (define-command-table menu-item-tests)
 (define-command-table menu-item-more)
 
@@ -416,7 +450,7 @@ Explicit items of an inherited table are not included."
                                   :errorp nil)
     (add-command-to-command-table 'com-menu-extra more :menu nil :errorp nil)
     (add-menu-item-to-command-table more "Extra" :command 'com-menu-extra
-                                    :errorp nil)
+                                    :keystroke #\e :errorp nil)
     (add-menu-item-to-command-table more "Line" :divider nil :errorp nil)
     (add-menu-item-to-command-table table "More" :menu more
                                     :documentation "Further commands."
@@ -433,6 +467,9 @@ Explicit items of an inherited table are not included."
         (should-eq :command (command-menu-item-type (first children)))
         (should-equal "Extra" (command-menu-item-name (first children)))
         (should-eq 'com-menu-extra (command-menu-item-value (first children)))
+        (should-eq #\e (command-menu-item-keystroke (first children)))
+        (should-eq 'com-menu-extra (command-for-menu-keystroke table #\E))
+        (should-be-null (command-for-menu-keystroke table #\z))
         (should-eq :divider (command-menu-item-type (second children)))
         (should-be-null (command-menu-item-value (second children)))))
     (should-equal '(("Plain" com-menu-plain)) (command-table-menu table))

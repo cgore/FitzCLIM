@@ -47,11 +47,17 @@
         :FitzCLIM/layout)
   (:export :application-pane
            :find-innermost-applicable-presentation
+           :pane-display-function
            :presentation-at-position))
 (in-package :FitzCLIM/pane)
 
 (defclass application-pane (leaf-sheet output-recording-stream sheet-layout-mixin)
-  ()
+  ((display-function
+    :initarg :display-function
+    :initform nil
+    :accessor pane-display-function
+    :documentation "A function of a frame and this pane, or NIL.
+REDISPLAY-FRAME-PANES calls it to redraw the pane."))
   (:documentation
    "A sheet that records output and holds presentations.  A pointer
 position on the sheet names the presentation drawn there."))

@@ -35,8 +35,12 @@
 (defpackage :FitzCLIM/redisplay
   (:use :common-lisp
         :sigma/behave
+        :FitzCLIM/sheet
+        :FitzCLIM/frame
+        :FitzCLIM/pane
         :FitzCLIM/output-record)
   (:export :redisplay
+           :redisplay-frame-panes
            :updating-output
            :updating-output-record))
 (in-package :FitzCLIM/redisplay)
@@ -194,6 +198,25 @@ BODY whenever redisplay runs."
         :cache-test ,cache-test
         :all-new ,all-new))))
 
+(defun redisplay-frame-panes (frame &key force-p)
+  "Redraw each application pane of FRAME that has a display function.
+The function receives FRAME and the pane and writes on the pane.
+Output from the previous pass is kept when updating-output matches.
+FORCE-P is accepted.  A pane with no display function is left alone."
+  (declare (ignore force-p))
+  (let ((root (frame-panes frame)))
+    (when root
+      (map-over-sheets
+       (lambda (sheet)
+         (when (and (typep sheet 'application-pane)
+                    (pane-display-function sheet))
+           (let ((function (pane-display-function sheet)))
+             (redisplay sheet
+                        (lambda ()
+                          (funcall function frame sheet))))))
+       root)))
+  frame)
+
 (defun redisplay (stream generator)
   "Run GENERATOR again to rebuild STREAM's output history.
 The cursor returns to the left margin first.  updating-output keeps a
@@ -263,3 +286,29 @@ no arguments and writes to STREAM."
         (setf inner 2)
         (redisplay stream #'draw-nested)
         (should= 2 inner-runs)))))
+
+(behavior 'redisplay-frame-panes
+  (let* ((runs 0)
+         (pane (make-instance 'application-pane
+                              :display-function
+                              (lambda (frame pane)
+                                (declare (ignore frame))
+                                (incf runs)
+                                (write-string "star" pane))))
+         (plain (make-instance 'application-pane))
+         (frame (make-instance 'application-frame
+                               :name 'shown
+                               :pretty-name "Shown"
+                               :command-table nil)))
+    (setf (frame-panes frame) pane)
+    (should-eq frame (redisplay-frame-panes frame))
+    (should= 1 runs)
+    (should-equal "star"
+                  (displayed-text
+                   (recorded-text (stream-output-history pane) "star")))
+    (redisplay-frame-panes frame :force-p t)
+    (should= 2 runs)
+    (setf (frame-panes frame) plain)
+    (redisplay-frame-panes frame)
+    (should= 2 runs)
+    (should-be-null (recorded-text (stream-output-history plain) "star"))))

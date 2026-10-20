@@ -138,7 +138,7 @@
       :components
       ((:file "formatted-output")))
      (:module "redisplay"
-      :depends-on ("output-record")
+      :depends-on ("output-record" "sheet" "frame" "pane")
       :components
       ((:file "redisplay")))
      (:module "input-editor"

@@ -73,6 +73,11 @@
     :initform nil
     :reader updating-output-all-new
     :documentation "True when this record must be recomputed on every pass.")
+   (fixed-position
+    :initarg :fixed-position
+    :initform nil
+    :reader updating-output-fixed-position
+    :documentation "True when redisplay leaves this record where it was drawn.")
    (consumed
     :initform nil
     :accessor updating-output-consumed-p
@@ -127,9 +132,11 @@ nothing matches."
                                 (- (stream-cursor-x stream) origin-x)
                                 (- (stream-cursor-y stream) origin-y))))
 
-(defun reuse-updating-output (stream record cache-value)
-  "Keep RECORD and move the cursor as the original output did."
-  (place-updating-record stream record)
+(defun reuse-updating-output (stream record cache-value &key fixed-position)
+  "Keep RECORD and move the cursor as the original output did.
+FIXED-POSITION leaves RECORD where it was first drawn."
+  (unless fixed-position
+    (place-updating-record stream record))
   (stream-add-output-record stream record)
   (setf (updating-output-cache-value record) cache-value)
   (consume-updating-descendants record)
@@ -139,12 +146,14 @@ nothing matches."
   record)
 
 (defun record-updating-output (stream continuation
-                               &key cache-value cache-test unique-id all-new)
+                               &key cache-value cache-test unique-id all-new
+                                 fixed-position)
   "Record CONTINUATION in a new updating record and return that record."
   (let ((record (make-instance 'updating-output-record
                                :unique-id unique-id
                                :cache-test cache-test
-                               :all-new all-new))
+                               :all-new all-new
+                               :fixed-position fixed-position))
         (parent (stream-current-output-record stream))
         (start-x (stream-cursor-x stream))
         (start-y (stream-cursor-y stream)))
@@ -165,29 +174,35 @@ nothing matches."
 
 (defun invoke-updating-output (stream continuation
                                &key unique-id (cache-value t)
-                                 (cache-test #'eql) all-new)
+                                 (cache-test #'eql) all-new fixed-position)
   "Record CONTINUATION, or reuse the previous record when the cache matches.
 ALL-NEW recomputes every time.  UNIQUE-ID matches a record from the
-previous pass.  Without it, records match in the order they are made."
+previous pass.  Without it, records match in the order they are made.
+FIXED-POSITION keeps a matched record where it was first drawn.  A
+cache miss is still recorded at the cursor."
   (let ((existing (and (not all-new) (claim-updating-record unique-id))))
     (if (and existing
              (funcall cache-test
                       (updating-output-cache-value existing)
                       cache-value))
-        (reuse-updating-output stream existing cache-value)
+        (reuse-updating-output stream existing cache-value
+                               :fixed-position fixed-position)
         (record-updating-output stream continuation
                                 :cache-value cache-value
                                 :cache-test cache-test
                                 :unique-id unique-id
-                                :all-new all-new))))
+                                :all-new all-new
+                                :fixed-position fixed-position))))
 
 (defmacro updating-output
-    ((stream &key unique-id (cache-value t) (cache-test '#'eql) all-new)
+    ((stream &key unique-id (cache-value t) (cache-test '#'eql) all-new
+              fixed-position)
      &body body)
   "Record BODY so a later redisplay can keep it.
 CACHE-VALUE is compared with CACHE-TEST, which defaults to EQL.
 UNIQUE-ID matches the same output across passes.  ALL-NEW recomputes
-BODY whenever redisplay runs."
+BODY whenever redisplay runs.  FIXED-POSITION leaves a matched record
+where it was first drawn."
   (let ((stream-var (gensym "STREAM")))
     `(let ((,stream-var ,stream))
        (invoke-updating-output
@@ -196,7 +211,8 @@ BODY whenever redisplay runs."
         :unique-id ,unique-id
         :cache-value ,cache-value
         :cache-test ,cache-test
-        :all-new ,all-new))))
+        :all-new ,all-new
+        :fixed-position ,fixed-position))))
 
 (defun redisplay-frame-panes (frame &key force-p)
   "Redraw each application pane of FRAME that has a display function.
@@ -286,6 +302,40 @@ no arguments and writes to STREAM."
         (setf inner 2)
         (redisplay stream #'draw-nested)
         (should= 2 inner-runs)))))
+
+(behavior 'fixed-position-updating-output
+  (let ((stream (make-instance 'output-recording-stream))
+        (shifted nil)
+        (value "one"))
+    (flet ((draw ()
+             (when shifted
+               (setf (stream-cursor-position stream) (values 10 20)))
+             (updating-output (stream :cache-value value :unique-id 'pinned
+                                      :fixed-position t)
+               (write-string value stream))))
+      (draw)
+      (let ((record (first (output-record-children
+                            (stream-output-history stream)))))
+        (multiple-value-bind (x y) (output-record-position record)
+          (should= 0 x)
+          (should= 0 y))
+        (setf shifted t)
+        (redisplay stream #'draw)
+        (should-eq record (first (output-record-children
+                                  (stream-output-history stream))))
+        (multiple-value-bind (x y) (output-record-position record)
+          (should= 0 x)
+          (should= 0 y))
+        (should= (+ 10 108/5) (stream-cursor-x stream))
+        (should= 20 (stream-cursor-y stream))
+        (setf value "two")
+        (redisplay stream #'draw)
+        (let ((fresh (first (output-record-children
+                             (stream-output-history stream)))))
+          (should-be-false (eq record fresh))
+          (multiple-value-bind (x y) (output-record-position fresh)
+            (should= 10 x)
+            (should= 20 y)))))))
 
 (behavior 'redisplay-frame-panes
   (let* ((runs 0)

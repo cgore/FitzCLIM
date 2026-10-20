@@ -51,7 +51,10 @@
                 :read-token
                 :whitespace?)
   (:export :completion
-           :sequence-enumerated))
+           :null-or-type
+           :sequence-enumerated
+           :token-or-type
+           :type-or-string))
 (in-package :FitzCLIM/presentation/builtins)
 
 (defun parse-failure (control &rest arguments)
@@ -551,6 +554,64 @@ The longest name that matches the tokens is chosen."
                      (describe-presentation-type excluded nil)))
     (values value type)))
 
+(define-presentation-type (null-or-type inner)
+  :inherit-from t
+  :description "nil or a value")
+
+(define-presentation-method presentation-typep (object (type null-or-type))
+  (or (null object) (presentation-typep object inner)))
+
+(define-presentation-method present (object (type null-or-type) stream view &key)
+  (if (null object)
+      (write-string "nil" stream)
+      (present object :stream stream :type inner :view view)))
+
+(define-presentation-method accept ((type null-or-type) stream view &key)
+  (let ((token (read-token stream)))
+    (if (member token '("nil" "()") :test #'string-equal)
+        (values nil type)
+        (values (accept-from-string inner token) type))))
+
+(define-presentation-type (token-or-type tokens inner)
+  :inherit-from t
+  :description "a token or a value")
+
+(define-presentation-method presentation-typep (object (type token-or-type))
+  (or (and (listp tokens) (member object tokens :test #'equalp))
+      (presentation-typep object inner)))
+
+(define-presentation-method present (object (type token-or-type) stream view &key)
+  (if (and (listp tokens) (member object tokens :test #'equalp))
+      (write-string (princ-to-string object) stream)
+      (present object :stream stream :type inner :view view)))
+
+(define-presentation-method accept ((type token-or-type) stream view &key)
+  (let* ((token (read-token stream))
+         (match (and (listp tokens)
+                     (find token tokens
+                           :test (lambda (text element)
+                                   (string-equal text (princ-to-string element)))))))
+    (if match
+        (values match type)
+        (values (accept-from-string inner token) type))))
+
+(define-presentation-type (type-or-string inner)
+  :inherit-from t
+  :description "a value or a string")
+
+(define-presentation-method presentation-typep (object (type type-or-string))
+  (or (presentation-typep object inner) (stringp object)))
+
+(define-presentation-method present (object (type type-or-string) stream view &key)
+  (if (presentation-typep object inner)
+      (present object :stream stream :type inner :view view)
+      (present object :stream stream :type 'string :view view)))
+
+(define-presentation-method accept ((type type-or-string) stream view &key)
+  (let ((token (read-token stream)))
+    (handler-case (values (accept-from-string inner token) type)
+      (error () (values token type)))))
+
 (define-presentation-type blank-area
   :inherit-from nil
   :description "blank area")
@@ -675,6 +736,35 @@ The longest name that matches the tokens is chosen."
    (handler-case
        (progn (accept-from-string '(not integer) "3") nil)
      (error () t)))
+  (should-be-true (presentation-typep nil '(null-or-type integer)))
+  (should-be-true (presentation-typep 4 '(null-or-type integer)))
+  (should-be-false (presentation-typep "nope" '(null-or-type integer)))
+  (should-be-null (accept-from-string '(null-or-type integer) "nil"))
+  (should-be-null (accept-from-string '(null-or-type integer) "()"))
+  (should= 4 (accept-from-string '(null-or-type integer) "4"))
+  (should-equal "nil" (present-to-string nil :type '(null-or-type integer)))
+  (should-equal "4" (present-to-string 4 :type '(null-or-type integer)))
+  (should-be-true
+   (handler-case
+       (progn (accept-from-string '(null-or-type integer) "nope") nil)
+     (error () t)))
+  (should-eq :red
+             (accept-from-string '(token-or-type (:red :blue) integer) "red"))
+  (should= 4 (accept-from-string '(token-or-type (:red :blue) integer) "4"))
+  (should-be-true (presentation-typep :blue '(token-or-type (:red :blue) integer)))
+  (should-be-true (presentation-typep 4 '(token-or-type (:red :blue) integer)))
+  (should-be-false (presentation-typep "red" '(token-or-type (:red :blue) integer)))
+  (should-equal "RED"
+                (present-to-string :red :type '(token-or-type (:red :blue) integer)))
+  (should-equal "4"
+                (present-to-string 4 :type '(token-or-type (:red :blue) integer)))
+  (should= 4 (accept-from-string '(type-or-string integer) "4"))
+  (should-equal "nope" (accept-from-string '(type-or-string integer) "nope"))
+  (should-be-true (presentation-typep 4 '(type-or-string integer)))
+  (should-be-true (presentation-typep "nope" '(type-or-string integer)))
+  (should-be-false (presentation-typep :red '(type-or-string integer)))
+  (should-equal "4" (present-to-string 4 :type '(type-or-string integer)))
+  (should-equal "nope" (present-to-string "nope" :type '(type-or-string integer)))
   (should= 4 (accept-from-string '(or integer string) "4"))
   (should-equal "nope" (accept-from-string '(or integer string) "nope"))
   (should-be-true (presentation-typep 3 '(and integer (integer 0 10))))

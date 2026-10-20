@@ -42,6 +42,7 @@
   (:export :cell-output-record
            :filling-output
            :formatting-cell
+           :formatting-column
            :formatting-item-list
            :formatting-row
            :formatting-table
@@ -81,6 +82,10 @@ cell's origin is the baseline of that output before alignment."))
 
 (defvar *table-rows* nil
   "Rows collected by the current formatting-table, last row first.")
+
+(defvar *table-columns* nil
+  "Columns collected by the current formatting-table, last column first.
+Each column is a list of cells from top to bottom.")
 
 (defvar *cell-collectors* nil
   "A stack of cell lists.  The car is the innermost row or item list.")
@@ -180,14 +185,38 @@ and its y becomes the baseline just under the table."
             (values start-x (+ start-y baseline))))
     table))
 
+(defun empty-cell ()
+  "Return a cell with no output, used to keep a short column aligned."
+  (make-instance 'cell-output-record
+                 :align-x :left
+                 :align-y :baseline
+                 :min-width 0
+                 :min-height 0))
+
+(defun columns-to-rows (columns)
+  "Turn COLUMNS into rows.  COLUMNS run from left to right.
+A short column is padded so a later cell stays in its own column."
+  (let ((height (reduce #'max columns :key #'length :initial-value 0)))
+    (loop for row-index from 0 below height
+          collect (loop for column in columns
+                        collect (or (nth row-index column)
+                                    (empty-cell))))))
+
 (defun invoke-formatting-table (stream continuation
                                 &key (x-spacing 8) (y-spacing 2)
                                   (move-cursor t) equalize-column-widths)
-  "Run CONTINUATION, which calls formatting-row, and lay out the rows."
+  "Run CONTINUATION, which calls formatting-row or formatting-column.
+A table uses one of those, and the rows are then laid out."
   (let ((*in-table* t)
-        (*table-rows* nil))
+        (*table-rows* nil)
+        (*table-columns* nil))
     (funcall continuation)
-    (layout-rows stream (nreverse *table-rows*)
+    (when (and *table-rows* *table-columns*)
+      (error "A table cannot mix formatting-row and formatting-column."))
+    (layout-rows stream
+                 (if *table-columns*
+                     (columns-to-rows (nreverse *table-columns*))
+                     (nreverse *table-rows*))
                  :x-spacing x-spacing
                  :y-spacing y-spacing
                  :move-cursor move-cursor
@@ -226,6 +255,35 @@ STREAM is accepted so the form matches the surrounding macros.  The
 row is recorded on that table's stream."
   (declare (ignore stream))
   `(invoke-formatting-row (lambda () ,@body)))
+
+(defun invoke-formatting-column (continuation)
+  "Collect the cells CONTINUATION writes as the next column.
+Cells run from top to bottom.  This must run inside a table."
+  (unless *in-table*
+    (error "formatting-column is outside formatting-table."))
+  (let ((*cell-collectors* (cons nil *cell-collectors*)))
+    (funcall continuation)
+    (push (nreverse (car *cell-collectors*)) *table-columns*))
+  nil)
+
+(defmacro formatting-column
+    ((stream &key (x-spacing 8) (y-spacing 2) (move-cursor t))
+     &body body)
+  "Collect cells from BODY as one column.
+Inside formatting-table, columns sit side by side and the table's
+spacing is used.  Outside a table, BODY is a table of one column.
+X-SPACING, Y-SPACING, and MOVE-CURSOR apply only in that case."
+  (let ((stream-var (gensym "STREAM")))
+    `(let ((,stream-var ,stream))
+       (if *in-table*
+           (invoke-formatting-column (lambda () ,@body))
+           (invoke-formatting-table
+            ,stream-var
+            (lambda ()
+              (invoke-formatting-column (lambda () ,@body)))
+            :x-spacing ,x-spacing
+            :y-spacing ,y-spacing
+            :move-cursor ,move-cursor)))))
 
 (defun invoke-formatting-cell (stream continuation
                                &key (align-x :left) (align-y :baseline)
@@ -306,6 +364,55 @@ ALIGN-X is :LEFT, :CENTER, or :RIGHT.  ALIGN-Y is :BASELINE, :TOP,
     (let ((right (find-recorded-text (stream-output-history stream) "Z")))
       (should= (+ 108/5 (- 20 36/5))
                (nth-value 0 (output-record-sheet-origin right))))))
+
+(behavior 'formatting-column
+  (let ((stream (make-instance 'output-recording-stream)))
+    (formatting-table (stream :x-spacing 4 :y-spacing 2)
+      (formatting-column (stream)
+        (formatting-cell (stream) (write-string "A" stream))
+        (formatting-cell (stream) (write-string "BB" stream)))
+      (formatting-column (stream)
+        (formatting-cell (stream) (write-string "C" stream))
+        (formatting-cell (stream) (write-string "D" stream))))
+    (let ((beside (find-recorded-text (stream-output-history stream) "C"))
+          (below (find-recorded-text (stream-output-history stream) "BB"))
+          (lower (find-recorded-text (stream-output-history stream) "D")))
+      (should= (+ 72/5 4) (nth-value 0 (output-record-sheet-origin beside)))
+      (should= 0 (nth-value 1 (output-record-sheet-origin beside)))
+      (should= 0 (nth-value 0 (output-record-sheet-origin below)))
+      (should= 14 (nth-value 1 (output-record-sheet-origin below)))
+      (should= (+ 72/5 4) (nth-value 0 (output-record-sheet-origin lower)))
+      (should= 14 (nth-value 1 (output-record-sheet-origin lower))))
+    (should= 0 (stream-cursor-x stream))
+    (should= 26 (stream-cursor-y stream)))
+  (let ((stream (make-instance 'output-recording-stream)))
+    (formatting-table (stream :x-spacing 4 :y-spacing 0)
+      (formatting-column (stream)
+        (formatting-cell (stream) (write-string "A" stream)))
+      (formatting-column (stream)
+        (formatting-cell (stream) (write-string "B" stream))
+        (formatting-cell (stream) (write-string "C" stream))))
+    (let ((lower (find-recorded-text (stream-output-history stream) "C")))
+      (should= (+ 36/5 4) (nth-value 0 (output-record-sheet-origin lower)))
+      (should= 12 (nth-value 1 (output-record-sheet-origin lower)))))
+  (let ((stream (make-instance 'output-recording-stream)))
+    (formatting-column (stream :y-spacing 2)
+      (formatting-cell (stream) (write-string "A" stream))
+      (formatting-cell (stream) (write-string "B" stream)))
+    (let ((below (find-recorded-text (stream-output-history stream) "B")))
+      (should= 0 (nth-value 0 (output-record-sheet-origin below)))
+      (should= 14 (nth-value 1 (output-record-sheet-origin below)))))
+  (let ((stream (make-instance 'output-recording-stream)))
+    (should-be-true
+     (handler-case
+         (progn
+           (formatting-table (stream)
+             (formatting-row (stream)
+               (formatting-cell (stream) (write-string "A" stream)))
+             (formatting-column (stream)
+               (formatting-cell (stream) (write-string "B" stream))))
+           nil)
+       (error () t)))))
 
 (defun group-items (cells n-columns row-wise)
   "Split CELLS into rows of N-COLUMNS.

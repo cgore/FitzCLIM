@@ -38,7 +38,8 @@
         :FitzCLIM/presentation
         :FitzCLIM/presentation/present
         :FitzCLIM/presentation/builtins)
-  (:export :input-editing-stream
+  (:export :*completion-display*
+           :input-editing-stream
            :invoke-with-input-editing
            :with-input-editing))
 (in-package :FitzCLIM/input-editor)
@@ -116,16 +117,29 @@ buffer and throws to INPUT-EDITOR-RESCAN."
           do (vector-push-extend character buffer))
     buffer))
 
+(defvar *completion-display* nil
+  "The possibilities from the last completion, or NIL.
+Several matches set this to those strings separated by spaces.  One
+match, or none, clears it.")
+
+(defun show-completion-matches (matches)
+  "Record MATCHES as the completion display.  One match or none clears it."
+  (setf *completion-display*
+        (when (rest matches)
+          (format nil "~{~A~^ ~}" matches))))
+
 (defun complete-editor-buffer (stream)
   "Extend STREAM's buffer from *COMPLETION-POSSIBILITIES* and rescan.
 One match replaces the buffer.  Several matches extend it to the shared
-prefix.  No match leaves the buffer as it is."
+prefix and record those possibilities.  No match leaves the buffer as
+it is."
   (let* ((text (copy-seq (input-editor-buffer stream)))
          (matches (remove-if-not
                    (lambda (possibility)
                      (and (>= (length possibility) (length text))
                           (string-equal text possibility :end2 (length text))))
                    *completion-possibilities*)))
+    (show-completion-matches matches)
     (cond
       ((null matches) nil)
       ((null (rest matches))
@@ -196,19 +210,24 @@ restarts BODY."
     (with-input-editing (source)
       (should-equal "Ada" (accept 'string :stream source))
       (should-be-true (typep source 'input-editing-stream))))
+  (setf *completion-display* "stale")
   (with-input-from-string (stream (format nil "be~C" #\Tab))
     (should-equal "Bea"
-                  (accept '(completion ("Ada" "Adam" "Bea")) :stream stream)))
+                  (accept '(completion ("Ada" "Adam" "Bea")) :stream stream))
+    (should-be-null *completion-display*))
   (with-input-from-string (stream (format nil "ad~C" #\Tab))
     (should-equal "Ada"
-                  (accept '(completion ("Ada" "Adam" "Bea")) :stream stream)))
+                  (accept '(completion ("Ada" "Adam" "Bea")) :stream stream))
+    (should-equal "Ada Adam" *completion-display*))
   (with-input-from-string (stream (format nil "ca~Cgo" #\Tab))
     (should-equal "Cargo"
-                  (accept '(completion ("Cargo" "Cart")) :stream stream)))
+                  (accept '(completion ("Cargo" "Cart")) :stream stream))
+    (should-equal "Cargo Cart" *completion-display*))
   (with-input-from-string (stream (format nil "zz~C" #\Tab))
     (should-be-true
      (handler-case
          (progn
            (accept '(completion ("Ada" "Bea")) :stream stream)
            nil)
-       (error () t)))))
+       (error () t)))
+    (should-be-null *completion-display*)))

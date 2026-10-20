@@ -369,17 +369,27 @@ pane is searched through its scene."
 (defvar *pointer-drags* (make-hash-table :test #'eq)
   "Drags keyed by the frame they started in.")
 
+(defun unhighlight-pointer-drag (frame)
+  "Remove the highlight from FRAME's armed drag, when it has one."
+  (let ((drag (gethash frame *pointer-drags*)))
+    (when drag
+      (highlight-output-record (pointer-drag-presentation drag)
+                               (event-sheet (pointer-drag-event drag))
+                               :unhighlight))))
+
 (defun command-from-port-event (frame event)
   "Return the command EVENT produces for FRAME, or NIL.
 A press that names a command is returned at once and cancels a drag.
-A press that names a drag translator arms that drag.  A release of the
-same button on another presentation may return the drag's command.
-Motion leaves an armed drag in place."
+A press that names a drag translator arms that drag and highlights its
+presentation.  A release of the same button clears that highlight.  On
+another presentation it may return the drag's command.  Motion leaves
+an armed drag in place."
   (cond
     ((typep event 'pointer-button-press-event)
      (let ((command (command-from-pointer-event frame event)))
        (cond
          (command
+          (unhighlight-pointer-drag frame)
           (remhash frame *pointer-drags*)
           command)
          (t
@@ -391,6 +401,9 @@ Motion leaves an armed drag in place."
                         :window (event-sheet event)
                         :x (pointer-event-x event)
                         :y (pointer-event-y event)))
+              (unhighlight-pointer-drag frame)
+              (highlight-output-record presentation (event-sheet event)
+                                       :highlight)
               (setf (gethash frame *pointer-drags*)
                     (make-instance 'pointer-drag
                                    :presentation presentation
@@ -401,6 +414,7 @@ Motion leaves an armed drag in place."
        (when (and drag
                   (eq (pointer-event-button event)
                       (pointer-event-button (pointer-drag-event drag))))
+         (unhighlight-pointer-drag frame)
          (remhash frame *pointer-drags*)
          (let ((destination (presentation-under-pointer event))
                (source (pointer-drag-presentation drag)))
@@ -418,9 +432,10 @@ Motion leaves an armed drag in place."
   "Return the next command a pointer gesture on FRAME produces, or NIL.
 Queued native events are dispatched first.  A press that names a
 command is returned at once.  A press that names a drag translator
-arms the drag, and the matching release may return that command.
-Motion and unmatched events are skipped.  NIL means this frame's port
-queue is empty, or FRAME has no port."
+arms the drag and highlights that presentation.  The matching release
+clears the highlight and may return that command.  Motion and
+unmatched events are skipped.  NIL means this frame's port queue is
+empty, or FRAME has no port."
   (let ((port (frame-port frame)))
     (when port
       (loop repeat 32
@@ -546,46 +561,77 @@ READ-PORT-FRAME-COMMAND use it in place of a window system."))
     (setf (frame-port frame) port)
     (unwind-protect
          (let ((press (make-instance 'pointer-button-press-event
-                                     :sheet pane :x 2 :y 0 :button :left)))
-           (should-equal "cargo"
-                         (presentation-object (presentation-at-position pane 2 0)))
-           (should= 3
-                    (presentation-object (presentation-at-position pane 52 0)))
+                                     :sheet pane :x 2 :y 0 :button :left))
+               (cargo (presentation-at-position pane 2 0))
+               (dock (presentation-at-position pane 52 0))
+               (other (presentation-at-position pane 82 0)))
+           (should-equal "cargo" (presentation-object cargo))
+           (should= 3 (presentation-object dock))
            (should-be-null
-            (find-applicable-translators
-             (presentation-at-position pane 2 0)
-             'command table :event press))
+            (find-applicable-translators cargo 'command table :event press))
            (enqueue-event pane press)
+           (should-be-null (read-port-frame-command frame))
+           (should-be-true (output-record-highlighted cargo))
            (enqueue-event pane (make-instance 'pointer-motion-event
                                               :sheet pane :x 40 :y 0))
+           (should-be-null (read-port-frame-command frame))
+           (should-be-true (output-record-highlighted cargo))
            (enqueue-event pane (make-instance 'pointer-button-release-event
                                               :sheet pane :x 52 :y 0
                                               :button :left))
            (should-equal '(com-load-cargo "cargo" 3)
                          (read-port-frame-command frame))
            (should-be-null (gethash frame *pointer-drags*))
+           (should-be-false (output-record-highlighted cargo))
            (enqueue-event pane (make-instance 'pointer-button-press-event
                                               :sheet pane :x 2 :y 0
                                               :button :left))
+           (should-be-null (read-port-frame-command frame))
+           (should-be-true (output-record-highlighted cargo))
            (enqueue-event pane (make-instance 'pointer-button-release-event
                                               :sheet pane :x 200 :y 0
                                               :button :left))
            (should-be-null (read-port-frame-command frame))
            (should-be-null (gethash frame *pointer-drags*))
+           (should-be-false (output-record-highlighted cargo))
            (enqueue-event pane (make-instance 'pointer-button-press-event
                                               :sheet pane :x 2 :y 0
                                               :button :left))
+           (should-be-null (read-port-frame-command frame))
            (enqueue-event pane (make-instance 'pointer-button-release-event
                                               :sheet pane :x 4 :y 0
                                               :button :left))
            (should-be-null (read-port-frame-command frame))
+           (should-be-false (output-record-highlighted cargo))
            (enqueue-event pane (make-instance 'pointer-button-press-event
                                               :sheet pane :x 2 :y 0
                                               :button :left))
+           (should-be-null (read-port-frame-command frame))
            (enqueue-event pane (make-instance 'pointer-button-release-event
                                               :sheet pane :x 82 :y 0
                                               :button :left))
            (should-be-null (read-port-frame-command frame))
+           (should-be-false (output-record-highlighted cargo))
+           (enqueue-event pane (make-instance 'pointer-button-press-event
+                                              :sheet pane :x 2 :y 0
+                                              :button :left))
+           (should-be-null (read-port-frame-command frame))
+           (enqueue-event pane (make-instance 'pointer-button-press-event
+                                              :sheet pane :x 82 :y 0
+                                              :button :left))
+           (should-be-null (read-port-frame-command frame))
+           (should-be-false (output-record-highlighted cargo))
+           (should-be-true (output-record-highlighted other))
+           (enqueue-event pane (make-instance 'pointer-button-release-event
+                                              :sheet pane :x 200 :y 0
+                                              :button :left))
+           (should-be-null (read-port-frame-command frame))
+           (should-be-false (output-record-highlighted other))
+           (enqueue-event pane (make-instance 'pointer-button-press-event
+                                              :sheet pane :x 2 :y 0
+                                              :button :left))
+           (should-be-null (read-port-frame-command frame))
+           (should-be-true (output-record-highlighted cargo))
            (enqueue-event pane (make-instance 'pointer-button-press-event
                                               :sheet pane :x 52 :y 0
                                               :button :left))
@@ -596,7 +642,9 @@ READ-PORT-FRAME-COMMAND use it in place of a window system."))
              (should-equal '(com-note-dock 3)
                            (read-port-frame-command frame))
              (should-eq release (port-next-event port))
-             (should-be-null (gethash frame *pointer-drags*))))
+             (should-be-null (gethash frame *pointer-drags*))
+             (should-be-false (output-record-highlighted dock))
+             (should-be-false (output-record-highlighted cargo))))
       (remhash frame *pointer-drags*)
       (forget-mirror pane)
       (forget-mirror-frame 51)

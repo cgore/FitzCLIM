@@ -94,15 +94,16 @@
 (defparameter +ws-tabstop+ #x00010000)
 (defparameter +ws-ex-toolwindow+ #x00000080)
 (defparameter +ws-ex-noactivate+ #x08000000)
-(defparameter +sw-hide+ 0)
-(defparameter +sw-shownormal+ 1)
-(defparameter +sw-showna+ 8)
 (defparameter +ws-overlappedwindow+ #x00CF0000)
 (defparameter +ws-ex-appwindow+ #x00040000)
 (defparameter +gwl-style+ -16)
 (defparameter +gwl-exstyle+ -20)
+(defparameter +swp-nosize+ #x0001)
+(defparameter +swp-nomove+ #x0002)
 (defparameter +swp-nozorder+ #x0004)
 (defparameter +swp-framechanged+ #x0020)
+(defparameter +swp-showwindow+ #x0040)
+(defparameter +swp-hidewindow+ #x0080)
 (defparameter +spi-getworkarea+ #x0030)
 (defparameter +wm-close+ #x0010)
 (defparameter +wm-paint+ #x000F)
@@ -277,9 +278,6 @@ so a Lisp range is scaled onto 0 through 1000.")
   (max-count (signed 32)))
 (define-alien-routine ("GetWindowTextLengthW" get-window-text-length-w) (signed 32)
   (hwnd system-area-pointer))
-(define-alien-routine ("ShowWindow" show-window) (signed 32)
-  (hwnd system-area-pointer)
-  (command (signed 32)))
 (define-alien-routine ("IsWindow" is-window) (signed 32)
   (hwnd system-area-pointer))
 (define-alien-routine ("IsWindowVisible" is-window-visible) (signed 32)
@@ -1692,7 +1690,9 @@ MENU? is true when the window has a menu bar."
 
 (defmethod enable-frame ((manager windows-frame-manager) (frame application-frame))
   "Show FRAME as a normal window on the work area.
-The window can take focus.  Its title is the frame's pretty name."
+The window can take focus.  Its title is the frame's pretty name.
+SetWindowPos shows the window.  The first ShowWindow call in a process
+uses the startup show command, and a hidden startup would hide FRAME."
   (declare (ignore manager))
   (let* ((hwnd (frame-hwnd frame))
          (sap (hwnd-sap hwnd))
@@ -1705,13 +1705,20 @@ The window can take focus.  Its title is the frame's pretty name."
           (frame-outer-size frame (plusp (sb-sys:sap-int (get-menu sap))))
         (set-window-pos sap (sb-sys:int-sap 0)
                         (+ x 40) (+ y 40) width height
-                        (logior +swp-nozorder+ +swp-framechanged+))))
-    (show-window sap +sw-shownormal+))
+                        (logior +swp-nozorder+
+                                +swp-framechanged+
+                                +swp-showwindow+)))))
   frame)
 
 (defmethod disable-frame ((manager windows-frame-manager) (frame application-frame))
+  "Hide FRAME without using ShowWindow.
+The first ShowWindow call in a process uses the startup show command."
   (declare (ignore manager))
-  (show-window (hwnd-sap (frame-hwnd frame)) +sw-hide+)
+  (set-window-pos (hwnd-sap (frame-hwnd frame))
+                  (sb-sys:int-sap 0)
+                  0 0 0 0
+                  (logior +swp-nosize+ +swp-nomove+ +swp-nozorder+
+                          +swp-hidewindow+))
   frame)
 
 (define-alien-type win-msg

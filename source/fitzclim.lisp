@@ -50,6 +50,7 @@
         :FitzCLIM/presentation
         :FitzCLIM/presentation/present
         :FitzCLIM/presentation/translator
+        :FitzCLIM/presentation/builtins
         :FitzCLIM/output-record
         :FitzCLIM/medium
         :FitzCLIM/medium/drawing
@@ -60,6 +61,7 @@
         :FitzCLIM/formatted-output
         :FitzCLIM/redisplay
         :FitzCLIM/input-editor
+        :FitzCLIM/stream
         :FitzCLIM/dialog
         :FitzCLIM/opengl
         :FitzCLIM/port
@@ -83,6 +85,7 @@
                    :FitzCLIM/presentation
                    :FitzCLIM/presentation/present
                    :FitzCLIM/presentation/translator
+                   :FitzCLIM/presentation/builtins
                    :FitzCLIM/output-record
                    :FitzCLIM/medium
                    :FitzCLIM/medium/drawing
@@ -93,6 +96,7 @@
                    :FitzCLIM/formatted-output
                    :FitzCLIM/redisplay
                    :FitzCLIM/input-editor
+                   :FitzCLIM/stream
                    :FitzCLIM/dialog
                    :FitzCLIM/opengl
                    :FitzCLIM/port

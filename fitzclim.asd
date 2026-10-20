@@ -145,6 +145,10 @@
       :depends-on ("presentation")
       :components
       ((:file "input-editor")))
+     (:module "stream"
+      :depends-on ("input-editor")
+      :components
+      ((:file "stream")))
      (:module "dialog"
       :depends-on ("presentation" "command")
       :components
@@ -182,7 +186,7 @@
                    "event" "presentation" "output-record" "medium"
                    "hardcopy"
                    "pane" "gadget" "layout" "formatted-output"
-                   "redisplay" "input-editor" "dialog" "opengl"
+                   "redisplay" "input-editor" "stream" "dialog" "opengl"
                    "port"
                    #+win32 "windows"
                    #+darwin "cocoa"))))))

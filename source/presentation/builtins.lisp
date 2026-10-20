@@ -48,7 +48,8 @@
   (:import-from :FitzCLIM/presentation/present
                 :*presentation-type-histories*
                 :read-token
-                :whitespace?))
+                :whitespace?)
+  (:export :sequence-enumerated))
 (in-package :FitzCLIM/presentation/builtins)
 
 (defun parse-failure (control &rest arguments)
@@ -503,6 +504,46 @@ The longest name that matches the tokens is chosen."
                        (describe-presentation-type one nil))))
     (values object (or object-type type))))
 
+(define-presentation-type (sequence-enumerated &rest types)
+  :inherit-from t
+  :description "a fixed sequence")
+
+(define-presentation-method presentation-typep (object (type sequence-enumerated))
+  (and (typep object 'sequence)
+       (= (length object) (length types))
+       (every #'presentation-typep object types)))
+
+(define-presentation-method present (object (type sequence-enumerated) stream view &key)
+  (let ((first t))
+    (map nil
+         (lambda (element element-type)
+           (if first
+               (setf first nil)
+               (write-char #\Space stream))
+           (present element :stream stream :type element-type :view view))
+         object
+         types)))
+
+(define-presentation-method accept ((type sequence-enumerated) stream view &key)
+  (values (loop for element-type in types
+                collect (accept element-type :stream stream :view view))
+          type))
+
+(define-presentation-type (not excluded)
+  :inherit-from t
+  :description "something else")
+
+(define-presentation-method presentation-typep (object (type not))
+  (not (presentation-typep object excluded)))
+
+(define-presentation-method accept ((type not) stream view &key)
+  (let ((value (accept 'expression :stream stream :view view)))
+    (when (presentation-typep value excluded)
+      (parse-failure "~S is ~A."
+                     value
+                     (describe-presentation-type excluded nil)))
+    (values value type)))
+
 (define-presentation-type blank-area
   :inherit-from nil
   :description "blank area")
@@ -611,6 +652,22 @@ The longest name that matches the tokens is chosen."
                 (accept-from-string '(completion ("red" "green")) "GREEN"))
   (should-equal '(1 2 3) (accept-from-string '(sequence integer) "1 2 3"))
   (should-equal '(2 1) (accept-from-string '(subset (1 2 3)) "2 1"))
+  (should-equal '(4 "nope")
+                (accept-from-string '(sequence-enumerated integer string) "4 nope"))
+  (should-be-true (presentation-typep '(4 "nope")
+                                      '(sequence-enumerated integer string)))
+  (should-be-false (presentation-typep '(4 5)
+                                       '(sequence-enumerated integer string)))
+  (should-be-false (presentation-typep 3 '(not integer)))
+  (should-be-true (presentation-typep "nope" '(not integer)))
+  (should-equal "kept" (accept-from-string '(not integer) "\"kept\""))
+  (should-equal "4 nope"
+                (present-to-string '(4 "nope")
+                                   :type '(sequence-enumerated integer string)))
+  (should-be-true
+   (handler-case
+       (progn (accept-from-string '(not integer) "3") nil)
+     (error () t)))
   (should= 4 (accept-from-string '(or integer string) "4"))
   (should-equal "nope" (accept-from-string '(or integer string) "nope"))
   (should-be-true (presentation-typep 3 '(and integer (integer 0 10))))

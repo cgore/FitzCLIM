@@ -95,7 +95,16 @@
 (defparameter +ws-ex-toolwindow+ #x00000080)
 (defparameter +ws-ex-noactivate+ #x08000000)
 (defparameter +sw-hide+ 0)
+(defparameter +sw-shownormal+ 1)
 (defparameter +sw-showna+ 8)
+(defparameter +ws-overlappedwindow+ #x00CF0000)
+(defparameter +ws-ex-appwindow+ #x00040000)
+(defparameter +gwl-style+ -16)
+(defparameter +gwl-exstyle+ -20)
+(defparameter +swp-nozorder+ #x0004)
+(defparameter +swp-framechanged+ #x0020)
+(defparameter +spi-getworkarea+ #x0030)
+(defparameter +wm-close+ #x0010)
 (defparameter +wm-paint+ #x000F)
 (defparameter +wm-keydown+ #x0100)
 (defparameter +wm-keyup+ #x0101)
@@ -232,6 +241,25 @@ so a Lisp range is scaled onto 0 through 1000.")
   (width (signed 32))
   (height (signed 32))
   (repaint (signed 32)))
+(define-alien-routine ("SetWindowLongPtrW" set-window-long-ptr-w) (signed 64)
+  (hwnd system-area-pointer)
+  (index (signed 32))
+  (new-long (signed 64)))
+(define-alien-routine ("AdjustWindowRectEx" adjust-window-rect-ex) (signed 32)
+  (rect (* win-rect))
+  (style (unsigned 32))
+  (menu (signed 32))
+  (ex-style (unsigned 32)))
+(define-alien-routine ("SystemParametersInfoW" system-parameters-info-w) (signed 32)
+  (action (unsigned 32))
+  (param (unsigned 32))
+  (pv-param system-area-pointer)
+  (win-ini (unsigned 32)))
+(define-alien-routine ("GetMessageW" get-message-w) (signed 32)
+  (message system-area-pointer)
+  (hwnd system-area-pointer)
+  (filter-min (unsigned 32))
+  (filter-max (unsigned 32)))
 (define-alien-routine ("SetWindowPos" set-window-pos) (signed 32)
   (hwnd system-area-pointer)
   (insert-after system-area-pointer)
@@ -1639,9 +1667,46 @@ children are parented to the frame window."))
       (error "The frame has no native window."))
     (sheet-mirror top)))
 
+(defun work-area-origin ()
+  "Return the left and top of the desktop work area, in pixels."
+  (with-alien ((rect win-rect))
+    (if (plusp (system-parameters-info-w +spi-getworkarea+ 0
+                                         (alien-sap (addr rect)) 0))
+        (values (slot rect 'left) (slot rect 'top))
+        (values 0 0))))
+
+(defun frame-outer-size (frame menu?)
+  "Return the window size whose client area is FRAME's width and height.
+MENU? is true when the window has a menu bar."
+  (with-alien ((rect win-rect))
+    (setf (slot rect 'left) 0
+          (slot rect 'top) 0
+          (slot rect 'right) (round (frame-width frame))
+          (slot rect 'bottom) (round (frame-height frame)))
+    (adjust-window-rect-ex (addr rect)
+                           (logior +ws-overlappedwindow+ +ws-clipchildren+)
+                           (if menu? 1 0)
+                           +ws-ex-appwindow+)
+    (values (- (slot rect 'right) (slot rect 'left))
+            (- (slot rect 'bottom) (slot rect 'top)))))
+
 (defmethod enable-frame ((manager windows-frame-manager) (frame application-frame))
+  "Show FRAME as a normal window on the work area.
+The window can take focus.  Its title is the frame's pretty name."
   (declare (ignore manager))
-  (show-window (hwnd-sap (frame-hwnd frame)) +sw-showna+)
+  (let* ((hwnd (frame-hwnd frame))
+         (sap (hwnd-sap hwnd))
+         (style (logior +ws-overlappedwindow+ +ws-clipchildren+)))
+    (set-window-long-ptr-w sap +gwl-style+ style)
+    (set-window-long-ptr-w sap +gwl-exstyle+ +ws-ex-appwindow+)
+    (set-window-text hwnd (frame-pretty-name frame))
+    (multiple-value-bind (x y) (work-area-origin)
+      (multiple-value-bind (width height)
+          (frame-outer-size frame (plusp (sb-sys:sap-int (get-menu sap))))
+        (set-window-pos sap (sb-sys:int-sap 0)
+                        (+ x 40) (+ y 40) width height
+                        (logior +swp-nozorder+ +swp-framechanged+))))
+    (show-window sap +sw-shownormal+))
   frame)
 
 (defmethod disable-frame ((manager windows-frame-manager) (frame application-frame))
@@ -1661,14 +1726,98 @@ children are parented to the frame window."))
     (y (signed 32))
     (padding2 (unsigned 32))))
 
-(defmethod process-next-event ((port windows-port) &key wait-function timeout)
-  "Dispatch one queued Windows message.  This does not wait."
-  (declare (ignore port wait-function timeout))
+(defun dispatch-queued-message (&optional wait?)
+  "Dispatch one Windows message.
+WAIT? uses GetMessage and blocks until a message arrives.  The default
+uses PeekMessage and returns false when the queue is empty."
   (with-alien ((message win-msg))
     (let ((sap (alien-sap (addr message))))
-      (when (plusp (peek-message-w sap (sb-sys:int-sap 0) 0 0 +pm-remove+))
-        (dispatch-message-w sap)
-        t))))
+      (cond
+        (wait?
+         (when (plusp (get-message-w sap (sb-sys:int-sap 0) 0 0))
+           (translate-message sap)
+           (dispatch-message-w sap)
+           t))
+        ((plusp (peek-message-w sap (sb-sys:int-sap 0) 0 0 +pm-remove+))
+         (dispatch-message-w sap)
+         t)))))
+
+(defmethod process-next-event ((port windows-port) &key wait-function timeout)
+  "Dispatch one Windows message for PORT.
+TIMEOUT T waits for the next message.  Any other TIMEOUT, including
+NIL, takes a queued message and does not wait."
+  (declare (ignore port wait-function))
+  (dispatch-queued-message (eq timeout t)))
+
+(defun windows-frame-shown? (frame)
+  "Return true when FRAME has a visible Windows window."
+  (let ((top (frame-top-level-sheet frame)))
+    (when (and top (sheet-mirror top))
+      (let ((sap (hwnd-sap (sheet-mirror top))))
+        (and (plusp (is-window sap))
+             (plusp (is-window-visible sap)))))))
+
+(defun wait-for-windows-frame (frame)
+  "Wait until FRAME receives one Windows message.
+Return true when FRAME is still shown.  Return false when it has no
+visible window, so an unshown frame does not block the command loop."
+  (when (windows-frame-shown? frame)
+    (let ((port (frame-port frame)))
+      (when port
+        (process-next-event port :timeout t)))
+    (windows-frame-shown? frame)))
+
+(setf *frame-input-waiter* #'wait-for-windows-frame)
+
+(define-application-frame windows-show-frame ()
+  ()
+  (:pretty-name "Shown Frame")
+  (:panes
+   (name :label :label "Name" :width 80 :height 16))
+  (:layouts
+   (default (progn name)))
+  (:geometry 200 80))
+
+(behavior 'windows-shown-frame
+  (setf *window-proc-error* nil)
+  (let ((manager (make-windows-frame-manager))
+        (frame (make-application-frame 'windows-show-frame)))
+    (unwind-protect
+         (progn
+           (adopt-frame manager frame)
+           (let ((sap (hwnd-sap (frame-hwnd frame))))
+             (should-eq frame (run-frame-top-level frame))
+             (with-alien ((rect win-rect))
+               (get-window-rect sap (addr rect))
+               (should= -32000 (slot rect 'left))
+               (should= -32000 (slot rect 'top)))
+             (enable-frame manager frame)
+             (multiple-value-bind (work-x work-y) (work-area-origin)
+               (with-alien ((rect win-rect))
+                 (get-window-rect sap (addr rect))
+                 (should= (+ work-x 40) (slot rect 'left))
+                 (should= (+ work-y 40) (slot rect 'top))))
+             (should-equal "Shown Frame" (window-text (frame-hwnd frame)))
+             (should-be-true (plusp (is-window-visible sap)))
+             (let* ((start (get-internal-real-time))
+                    (timer (sb-ext:make-timer
+                            (lambda ()
+                              (post-message-w sap +wm-close+ 0 0))
+                            :thread t)))
+               (unwind-protect
+                    (progn
+                      (sb-ext:schedule-timer timer 0.3)
+                      (should-eq frame (run-frame-top-level frame))
+                      (should-be-true
+                       (> (- (get-internal-real-time) start)
+                          (* 0.15 internal-time-units-per-second))))
+                 (sb-ext:unschedule-timer timer)))
+             (should= 0 (is-window sap))
+             (when *window-proc-error*
+               (error "The window procedure failed: ~A" *window-proc-error*))
+             (disown-frame manager frame)))
+      (when (member frame (frame-manager-frames manager) :test #'eq)
+        (disown-frame manager frame)))))
 
 (defmethod (setf gadget-value) :after
     (value (gadget text-field) &key invoke-callback)

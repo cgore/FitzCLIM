@@ -53,6 +53,7 @@
         :FitzCLIM/output-record
         :FitzCLIM/medium
         :FitzCLIM/medium/drawing
+        :FitzCLIM/hardcopy
         :FitzCLIM/pane
         :FitzCLIM/gadget
         :FitzCLIM/layout
@@ -85,6 +86,7 @@
                    :FitzCLIM/output-record
                    :FitzCLIM/medium
                    :FitzCLIM/medium/drawing
+                   :FitzCLIM/hardcopy
                    :FitzCLIM/pane
                    :FitzCLIM/gadget
                    :FitzCLIM/layout

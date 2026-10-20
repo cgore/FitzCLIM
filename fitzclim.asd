@@ -117,6 +117,10 @@
       ((:file "medium")
        (:file "drawing"
         :depends-on ("medium"))))
+     (:module "hardcopy"
+      :depends-on ("output-record" "medium" "graphics")
+      :components
+      ((:file "hardcopy")))
      (:module "layout"
       :depends-on ("geometry" "sheet")
       :components
@@ -176,6 +180,7 @@
      (:file "fitzclim"
       :depends-on ("geometry" "graphics" "sheet" "command" "frame"
                    "event" "presentation" "output-record" "medium"
+                   "hardcopy"
                    "pane" "gadget" "layout" "formatted-output"
                    "redisplay" "input-editor" "dialog" "opengl"
                    "port"

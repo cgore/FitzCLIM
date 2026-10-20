@@ -73,6 +73,7 @@
            :process-next-event
            :read-port-frame-command
            :remember-mirror
+           :tracking-pointer
            :sheet-in-root
            :sheet-mirror
            :sheet-pixel-size))
@@ -599,4 +600,198 @@ READ-PORT-FRAME-COMMAND use it in place of a window system."))
       (remhash frame *pointer-drags*)
       (forget-mirror pane)
       (forget-mirror-frame 51)
+      (forget-frame-port frame))))
+
+(defun sheet-port (sheet)
+  "Return the port that realized SHEET, or NIL."
+  (let* ((root (mirror-root sheet))
+         (frame (and root (mirror-frame (sheet-mirror root)))))
+    (and frame (frame-port frame))))
+
+(defun tracked-sheet-event? (event sheet multiple-window)
+  "Return true if EVENT should be seen while tracking SHEET.
+MULTIPLE-WINDOW also accepts an event aimed at another sheet."
+  (or multiple-window
+      (let ((target (event-sheet event)))
+        (or (eq target sheet)
+            (and target (sheet-ancestor-p target sheet))))))
+
+(defun tracking-clause-matches? (name event presentation)
+  "Return true if the clause named NAME applies to EVENT."
+  (case name
+    (:pointer-motion
+     (and (typep event 'pointer-motion-event)
+          (not (typep event 'pointer-enter-event))
+          (not (typep event 'pointer-exit-event))))
+    (:pointer-enter (typep event 'pointer-enter-event))
+    (:pointer-exit (typep event 'pointer-exit-event))
+    (:pointer-button-press (typep event 'pointer-button-press-event))
+    (:pointer-button-release (typep event 'pointer-button-release-event))
+    (:keyboard (typep event 'keyboard-event))
+    (:presentation
+     (and presentation
+          (typep event 'pointer-motion-event)
+          (not (typep event 'pointer-enter-event))
+          (not (typep event 'pointer-exit-event))))
+    (:presentation-button-press
+     (and presentation (typep event 'pointer-button-press-event)))
+    (:presentation-button-release
+     (and presentation (typep event 'pointer-button-release-event)))
+    (t nil)))
+
+(defun tracking-pointer-arguments (event presentation)
+  "Return the keyword arguments a tracking clause receives."
+  (list :event event
+        :window (event-sheet event)
+        :presentation presentation
+        :x (when (typep event 'pointer-event) (pointer-event-x event))
+        :y (when (typep event 'pointer-event) (pointer-event-y event))
+        :button (when (typep event 'pointer-button-event)
+                  (pointer-event-button event))
+        :modifier-state (event-modifier-state event)
+        :character (when (typep event 'keyboard-event)
+                     (keyboard-event-character event))
+        :key-name (when (typep event 'keyboard-event)
+                    (keyboard-event-key-name event))))
+
+(defmacro tracking-pointer ((sheet &key multiple-window &allow-other-keys)
+                            &body clauses)
+  "Read queued pointer events on SHEET and run the matching clauses.
+An empty queue returns NIL.  The tracker does not wait for a new
+event.  MULTIPLE-WINDOW, when true, also reads events aimed at other
+sheets of the same port.  Other options are accepted and ignored.
+RETURN from a clause exits the tracker.  Highlighting and pointer
+documentation are not drawn."
+  (labels ((clause-lambda-list (lambda-list)
+             (if (or (member '&allow-other-keys lambda-list)
+                     (member '&rest lambda-list))
+                 lambda-list
+                 (append lambda-list '(&allow-other-keys))))
+           (expand-clause (clause event-var presentation-var)
+             (unless (and (consp clause) (keywordp (first clause))
+                          (consp (rest clause)))
+               (error "A tracking-pointer clause must start with a keyword and a lambda list."))
+             (destructuring-bind (name lambda-list &body body) clause
+               `(when (tracking-clause-matches? ',name ,event-var ,presentation-var)
+                  (apply (lambda ,(clause-lambda-list lambda-list)
+                           ,@body)
+                         (tracking-pointer-arguments ,event-var ,presentation-var))))))
+    (let ((sheet-var (gensym "SHEET"))
+          (port-var (gensym "PORT"))
+          (event-var (gensym "EVENT"))
+          (presentation-var (gensym "PRESENTATION"))
+          (multiple-var (gensym "MULTIPLE")))
+      `(let* ((,sheet-var ,sheet)
+              (,multiple-var ,multiple-window)
+              (,port-var (sheet-port ,sheet-var)))
+         (block nil
+           (unless ,port-var
+             (return nil))
+           (let ((,event-var nil))
+             (tagbody
+              next
+                (setf ,event-var (port-next-event ,port-var))
+                (unless ,event-var
+                  (return nil))
+                (when (tracked-sheet-event? ,event-var ,sheet-var ,multiple-var)
+                  (let ((,presentation-var
+                          (when (typep ,event-var 'pointer-event)
+                            (presentation-under-pointer ,event-var))))
+                    ,@(mapcar (lambda (clause)
+                                (expand-clause clause event-var presentation-var))
+                              clauses)))
+                (go next))))))))
+
+(behavior 'tracking-pointer
+  (let ((sheet (make-instance 'basic-sheet)))
+    (should-be-null
+     (tracking-pointer (sheet)
+       (:pointer-motion (&key x y)
+         (declare (ignore x y))
+         (return t)))))
+  (let* ((port (make-instance 'event-probe-port))
+         (frame (make-instance 'application-frame
+                               :name 'tracked
+                               :pretty-name "Tracked"
+                               :command-table nil))
+         (sheet (make-instance 'basic-sheet))
+         (other (make-instance 'basic-sheet))
+         (seen nil))
+    (remember-mirror sheet 61)
+    (setf (mirror-frame 61) frame)
+    (setf (frame-port frame) port)
+    (unwind-protect
+         (progn
+           (enqueue-event sheet (make-instance 'pointer-motion-event
+                                               :sheet sheet :x 3 :y 4))
+           (enqueue-event sheet (make-instance 'pointer-button-press-event
+                                               :sheet sheet :x 5 :y 6
+                                               :button :left))
+           (should-equal '(5 6)
+                         (tracking-pointer (sheet)
+                           (:pointer-motion (&key x y)
+                             (push (list x y) seen))
+                           (:pointer-button-press (&key x y)
+                             (return (list x y)))))
+           (should-equal '((3 4)) seen)
+           (should-be-null (port-next-event port))
+           (enqueue-event sheet (make-instance 'pointer-motion-event
+                                               :sheet other :x 9 :y 8))
+           (enqueue-event sheet (make-instance 'pointer-motion-event
+                                               :sheet sheet :x 1 :y 2))
+           (should-equal '(1 2)
+                         (tracking-pointer (sheet)
+                           (:pointer-motion (&key x y window)
+                             (should-eq sheet window)
+                             (return (list x y)))))
+           (should-be-null
+            (tracking-pointer (sheet)
+              (:pointer-motion (&key x y)
+                (declare (ignore x y))
+                (return t))))
+           (enqueue-event sheet (make-instance 'pointer-motion-event
+                                               :sheet other :x 7 :y 8))
+           (should-equal '(7 8)
+                         (tracking-pointer (sheet :multiple-window t)
+                           (:pointer-motion (&key x y)
+                             (return (list x y)))))
+           (enqueue-event sheet (make-instance 'key-press-event
+                                               :sheet sheet
+                                               :character #\a
+                                               :key-name :a))
+           (should-equal '(:a #\a)
+                         (tracking-pointer (sheet)
+                           (:keyboard (&key key-name character)
+                             (return (list key-name character)))))
+           (enqueue-event sheet (make-instance 'pointer-enter-event
+                                               :sheet sheet :x 0 :y 1))
+           (should-equal '(0 1)
+                         (tracking-pointer (sheet)
+                           (:pointer-enter (&key x y)
+                             (return (list x y))))))
+      (forget-mirror sheet)
+      (forget-mirror-frame 61)
+      (forget-frame-port frame)))
+  (let* ((port (make-instance 'event-probe-port))
+         (frame (make-instance 'application-frame
+                               :name 'tracked-presentation
+                               :pretty-name "Tracked Presentation"
+                               :command-table nil))
+         (pane (make-instance 'application-pane)))
+    (setf (stream-cursor-position pane) (values 0 0))
+    (present "cargo" :stream pane :type 'string)
+    (remember-mirror pane 62)
+    (setf (mirror-frame 62) frame)
+    (setf (frame-port frame) port)
+    (unwind-protect
+         (progn
+           (enqueue-event pane (make-instance 'pointer-button-press-event
+                                              :sheet pane :x 2 :y 0
+                                              :button :left))
+           (should-equal "cargo"
+                         (tracking-pointer (pane)
+                           (:presentation-button-press (&key presentation)
+                             (return (presentation-object presentation))))))
+      (forget-mirror pane)
+      (forget-mirror-frame 62)
       (forget-frame-port frame))))

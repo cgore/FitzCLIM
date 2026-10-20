@@ -52,6 +52,7 @@
            :define-presentation-to-command-translator
            :define-presentation-translator
            :document-presentation-translator
+           :pointer-documentation
            :presentation-translator-destination-type
            :execute-presentation-gesture
            :find-applicable-translators
@@ -403,6 +404,38 @@ EVENT is the press that started the drag."
                 stream))))
   nil)
 
+(defun pointer-documentation (&key presentation context-type frame event
+                                window x y stream)
+  "Return the documentation of the translator that applies here.
+PRESENTATION is the object under the pointer.  CONTEXT-TYPE defaults
+to COMMAND.  FRAME supplies the command table.  EVENT, WINDOW, X, and
+Y are passed to the translator.  The string is written to STREAM when
+one is given.  NIL means no translator applies.  Nothing is drawn."
+  (let ((table (and frame (frame-command-table frame))))
+    (when (and presentation table)
+      (let* ((context (or context-type 'command))
+             (translators (find-applicable-translators
+                           presentation context table
+                           :event event
+                           :frame frame
+                           :window window
+                           :x x
+                           :y y)))
+        (when translators
+          (let ((text (with-output-to-string (buffer)
+                        (document-presentation-translator
+                         (first translators) presentation context
+                         :frame frame
+                         :event event
+                         :window window
+                         :x x
+                         :y y
+                         :stream buffer))))
+            (when (plusp (length text))
+              (when stream
+                (write-string text stream))
+              text)))))))
+
 (defun command-from-presentation (presentation event command-table
                                   &key frame window x y)
   "Return the command PRESENTATION and EVENT produce, or NIL.
@@ -554,7 +587,25 @@ Return NIL when no translator applies."
       (should-equal "Select a starship"
                     (with-output-to-string (stream)
                       (document-presentation-translator
-                       translator presentation 'command :stream stream))))
+                       translator presentation 'command :stream stream)))
+      (should-equal "Select a starship"
+                    (pointer-documentation :presentation presentation
+                                           :frame frame
+                                           :event press))
+      (should-equal "Select a starship"
+                    (with-output-to-string (stream)
+                      (pointer-documentation :presentation presentation
+                                             :frame frame
+                                             :event press
+                                             :stream stream)))
+      (should-be-null (pointer-documentation :presentation presentation
+                                             :context-type 'integer
+                                             :frame frame
+                                             :event press))
+      (should-be-null (pointer-documentation
+                       :presentation (make-presentation 3 'integer)
+                       :frame frame
+                       :event press)))
     (setf (frame-pending-commands frame)
           (list (accept-frame-command frame "Select Starship Sulaco")))
     (should-eq frame (run-frame-top-level frame))

@@ -47,7 +47,9 @@ Layout positions them through the sheet protocol.  A native control does not
 hold output records.  Its items may still be Lisp objects, and a selection
 may run a command.
 
-An application pane is drawn by FitzCLIM.  It records output and holds
+A presentation type may have an abbreviation.  The abbreviation expands
+to another presentation type, and a test or a presentation uses that
+type.  An application pane is drawn by FitzCLIM.  It records output and holds
 presentations.  A command loop reads commands, from typing or from a gesture
 on a presentation, and runs them.  After a command, panes that have a
 display function are drawn again.

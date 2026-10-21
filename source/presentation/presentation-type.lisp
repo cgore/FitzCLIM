@@ -45,6 +45,7 @@
            :define-presentation-method
            :define-presentation-type
            :describe-presentation-type
+           :define-presentation-type-abbreviation
            :expand-presentation-type-abbreviation
            :map-over-presentation-type-supertypes
            :presentation-subtypep
@@ -144,9 +145,48 @@
                        :decoder decoder
                        :supertype supertype)))
 
+(defvar *presentation-type-abbreviations* (make-hash-table :test #'eq)
+  "Abbreviation expanders keyed by name.
+Each expander is a function of the specifier and returns a presentation type.")
+
+(defun define-presentation-type-abbreviation-1 (name parameters body)
+  "Store an abbreviation named NAME.
+PARAMETERS is a lambda list.  BODY returns the presentation type the
+abbreviation expands to."
+  (setf (gethash name *presentation-type-abbreviations*)
+        (eval `(lambda ,parameters ,@body)))
+  name)
+
+(defmacro define-presentation-type-abbreviation (name parameters &body body)
+  "Define NAME as a short name for the presentation type BODY returns.
+PARAMETERS is a lambda list.  A bare NAME expands as though no
+arguments were supplied.  (NAME . arguments) supplies them."
+  `(define-presentation-type-abbreviation-1 ',name ',parameters ',body))
+
+(defun expand-presentation-type-abbreviation (type &optional environment)
+  "Return TYPE with its abbreviation expanded once.
+A type that is not an abbreviation is returned unchanged.  ENVIRONMENT
+is accepted and ignored."
+  (declare (ignore environment))
+  (let* ((name (if (consp type) (first type) type))
+         (expander (and (symbolp name)
+                        (gethash name *presentation-type-abbreviations*))))
+    (if expander
+        (apply expander (if (consp type) (rest type) nil))
+        type)))
+
+(defun expand-presentation-type-abbreviations (type)
+  "Return TYPE with every abbreviation expanded."
+  (loop for expanded = (expand-presentation-type-abbreviation type)
+        until (eq expanded type)
+        do (setf type expanded)
+        finally (return type)))
+
 (defun presentation-type-name (type)
-  "Return the name symbol of the presentation type specifier TYPE."
-  (if (consp type) (first type) type))
+  "Return the name symbol of the presentation type specifier TYPE.
+An abbreviation is expanded first."
+  (let ((expanded (expand-presentation-type-abbreviations type)))
+    (if (consp expanded) (first expanded) expanded)))
 
 (defun split-specifier-arguments (lambda-list option-specs args)
   "Split ARGS into parameter arguments and an option alist.
@@ -499,11 +539,6 @@ singular phrase."
       (walk type)))
   nil)
 
-(defun expand-presentation-type-abbreviation (type &optional environment)
-  "Return TYPE.  Abbreviation expansion is reserved for later."
-  (declare (ignore environment))
-  type)
-
 (defun numeric-presentation-subtypep (type putative type-name)
   "Return the range relationship when PUTATIVE is TYPE-NAME.
 The second value is NIL when PUTATIVE has another name, so the caller
@@ -538,6 +573,21 @@ can walk the supertype."
 (define-presentation-method presentation-typep (object (type widget))
   (and (symbolp object)
        (or (null kind) (eq object kind))))
+
+(define-presentation-type-abbreviation ship ()
+  'widget)
+
+(define-presentation-type-abbreviation kind-of (kind)
+  `(widget ,kind))
+
+(behavior 'presentation-type-abbreviation
+  (should-equal 'widget (expand-presentation-type-abbreviation 'ship))
+  (should-equal '(widget gear)
+                (expand-presentation-type-abbreviation '(kind-of gear)))
+  (should-eq 'widget (presentation-type-name 'ship))
+  (should-be-true (presentation-typep 'gear 'ship))
+  (should-be-true (presentation-typep 'gear '(kind-of gear)))
+  (should-be-false (presentation-typep 'sprocket '(kind-of gear))))
 
 (behavior 'define-presentation-type
   (should-be-true (presentation-type-specifier-p 'widget))

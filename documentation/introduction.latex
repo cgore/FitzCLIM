@@ -72,7 +72,9 @@ on the command is a character that runs it from the menu.
 supply named panes and more than one arrangement.  An
 \texttt{:interactor} pane reads a typed command line.  The command
 loop writes its prompt there and reads the next line when no gesture
-has produced a command.
+has produced a command.  \texttt{read-command} reads that line through
+the command parser.  The parser, the unparser, and the partial-command
+parser can be replaced for one call.
 
 A 3D pane is a native OpenGL child window, a sibling of the native controls.
 Pointer events at its edge become a ray.  A hit returns a Lisp object and

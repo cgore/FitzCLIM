@@ -50,12 +50,22 @@
                 :*presentation-type-histories*
                 :read-token
                 :whitespace?)
-  (:export :completion
+  (:export :*command-parser*
+           :*command-unparser*
+           :*partial-command-parser*
+           :completion
            :null-or-type
            :sequence-enumerated
            :token-or-type
            :type-or-string))
 (in-package :FitzCLIM/presentation/builtins)
+
+(declaim (special *command-parser* *command-unparser* *partial-command-parser*))
+
+(defvar *reading-command* nil
+  "True while the command parser is reading a command name and arguments.
+ACCEPT of COMMAND uses the parser only when this is false, so the
+parser can call ACCEPT without calling itself.")
 
 (defvar *partial-command* nil
   "A command whose unsupplied arguments ACCEPT of COMMAND should fill.
@@ -653,6 +663,26 @@ The longest name that matches the tokens is chosen."
           do (write-char #\Space stream)
              (present argument :stream stream :type argument-type :view view))))
 
+(defun read-command (command-table &key (stream *standard-input*)
+                                     (parser nil parserp)
+                                     unparser
+                                     (partial-parser nil partialp)
+                                     use-keystrokes)
+  "Read a command from STREAM using COMMAND-TABLE.
+PARSER, UNPARSER, and PARTIAL-PARSER replace the corresponding dynamic
+variables for this call.  USE-KEYSTROKES is accepted.  Return the
+command, or NIL at the end of the input."
+  (declare (ignore unparser use-keystrokes))
+  (let ((*command-parser* (if parserp parser *command-parser*))
+        (*partial-command-parser*
+          (if partialp partial-parser *partial-command-parser*))
+        (table (if (command-table-p command-table)
+                   command-table
+                   (find-command-table command-table))))
+    (when (peek-char t stream nil nil)
+      (accept `(command :command-table ,(command-table-name table))
+              :stream stream))))
+
 (defun command-argument-default (argument)
   "Return the :DEFAULT of ARGUMENT and true when one was supplied.
 ARGUMENT is (name type . options)."
@@ -676,11 +706,7 @@ still required, so an empty line signals a parse error."
 
 (defun read-frame-command-line (frame stream)
   "Read one command for FRAME from STREAM, or NIL at the end."
-  (let ((*default-command-table* (frame-command-table frame)))
-    (when (peek-char t stream nil nil)
-      (accept `(command :command-table
-                        ,(command-table-name (frame-command-table frame)))
-              :stream stream))))
+  (read-command (frame-command-table frame) :stream stream))
 
 (setf *command-line-reader* #'read-frame-command-line)
 
@@ -705,15 +731,66 @@ a :DEFAULT uses that value when the line has ended."
                 :default default
                 :provide-default supplied))))
 
+(defun command-line-command-parser (command-table stream)
+  "Read a command name and its arguments from STREAM.
+COMMAND-TABLE is a command table or its name.  Return the command, a
+list of the name and the arguments."
+  (let* ((table (if (command-table-p command-table)
+                    command-table
+                    (find-command-table command-table)))
+         (*default-command-table* table)
+         (*reading-command* t)
+         (command (read-command-from-stream stream table)))
+    (cons (command-name command)
+          (loop for argument in (command-arguments command)
+                collect (accept-command-argument argument stream +textual-view+)))))
+
+(defun command-line-command-unparser (command-table stream command)
+  "Write COMMAND on STREAM as its command-line name and arguments."
+  (present command :stream stream
+           :type `(command :command-table
+                           ,(command-table-name
+                             (if (command-table-p command-table)
+                                 command-table
+                                 (find-command-table command-table))))))
+
+(defun command-line-read-remaining-arguments-for-partial-command
+    (command-table stream partial-command start-position)
+  "Fill PARTIAL-COMMAND's unsupplied arguments from STREAM.
+START-POSITION is accepted.  A missing argument with a default uses it
+when the line has ended."
+  (declare (ignore start-position))
+  (let ((*default-command-table*
+          (if (command-table-p command-table)
+              command-table
+              (find-command-table command-table)))
+        (*reading-command* t))
+    (read-partial-command partial-command stream +textual-view+)))
+
+(defvar *command-parser* #'command-line-command-parser
+  "The function that reads a command from a command table and a stream.")
+
+(defvar *command-unparser* #'command-line-command-unparser
+  "The function that writes a command to a stream.")
+
+(defvar *partial-command-parser*
+  #'command-line-read-remaining-arguments-for-partial-command
+  "The function that fills a partial command from a stream.")
+
 (define-presentation-method accept ((type command) stream view &key)
   (let* ((table (or command-table *default-command-table*))
          (*default-command-table* table))
-    (values (if *partial-command*
-                (read-partial-command *partial-command* stream view)
-                (let ((command (read-command-from-stream stream table)))
-                  (cons (command-name command)
-                        (loop for argument in (command-arguments command)
-                              collect (accept-command-argument argument stream view)))))
+    (values (cond
+              (*reading-command*
+               (let ((command (read-command-from-stream stream table)))
+                 (cons (command-name command)
+                       (loop for argument in (command-arguments command)
+                             collect (accept-command-argument
+                                      argument stream +textual-view+)))))
+              (*partial-command*
+               (funcall *partial-command-parser*
+                        table stream *partial-command* nil))
+              (t (funcall *command-parser* table stream)))
             type)))
 
 (define-presentation-type (command-name &key (command-table nil))
@@ -789,6 +866,13 @@ a :DEFAULT uses that value when the line has ended."
   (should-be-false (presentation-typep 3 '(not integer)))
   (should-be-true (presentation-typep "nope" '(not integer)))
   (should-equal "kept" (accept-from-string '(not integer) "\"kept\""))
+  (should-equal '(com-add-numbers 2 3)
+                (read-command 'presentation-command-tests
+                              :stream (make-string-input-stream "Add 2 3")))
+  (should-equal "Add 2 3"
+                (with-output-to-string (stream)
+                  (command-line-command-unparser
+                   'presentation-command-tests stream '(com-add-numbers 2 3))))
   (should-equal "4 nope"
                 (present-to-string '(4 "nope")
                                    :type '(sequence-enumerated integer string)))

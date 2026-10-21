@@ -1686,21 +1686,58 @@ DRAWER is called with the device context and a COLORREF."
      (values t 0))
     (t (values nil 0))))
 
+(defun signed-lresult (value)
+  "Return VALUE as a signed 64-bit LRESULT.
+A window procedure returns an LRESULT, and DefWindowProc takes a signed
+lParam.  sap-int of a handle whose high bit is set is larger than a
+signed 64-bit integer.  The low 64 bits are the value Windows uses.
+NIL is 0."
+  (let ((bits (ldb (byte 64 0) (or value 0))))
+    (if (logbitp 63 bits)
+        (- bits (ash 1 64))
+        bits)))
+
+(behavior 'signed-lresult
+  (should= 1 (signed-lresult 1))
+  (should= 0 (signed-lresult nil))
+  (should= -1 (signed-lresult -1))
+  (should= -1626332176 (signed-lresult 18446744072083219440))
+  (should-be-true (typep (signed-lresult 18446744072083219440)
+                         '(signed-byte 64))))
+
 (define-alien-callable fitzclim-window-proc (signed 64)
     ((hwnd system-area-pointer)
      (message (unsigned 32))
      (wparam (unsigned 64))
-     (lparam (signed 64)))
-  (let ((integer (sb-sys:sap-int hwnd)))
+     (lparam (unsigned 64)))
+  (let ((integer (sb-sys:sap-int hwnd))
+        (signed-param (signed-lresult lparam)))
     (handler-case
         (multiple-value-bind (handled result)
             (handle-message integer message wparam lparam)
           (if handled
-              result
-              (def-window-proc-w hwnd message wparam lparam)))
+              (signed-lresult result)
+              (def-window-proc-w hwnd message wparam signed-param)))
       (error (condition)
         (setf *window-proc-error* condition)
-        (def-window-proc-w hwnd message wparam lparam)))))
+        (def-window-proc-w hwnd message wparam signed-param)))))
+
+(behavior 'window-proc-lresult
+  (setf *window-proc-error* nil)
+  (let ((result (alien-funcall
+                 (cast (alien-callable-function 'fitzclim-window-proc)
+                       (function (signed 64)
+                                 system-area-pointer
+                                 (unsigned 32)
+                                 (unsigned 64)
+                                 (unsigned 64)))
+                 (sb-sys:int-sap 0)
+                 +wm-keyup+
+                 0
+                 18446744072083219440)))
+    (should= 0 result)
+    (should-be-true (typep result '(signed-byte 64)))
+    (should-be-null *window-proc-error*)))
 
 (defun register-window-class (kind background &optional (style 0))
   "Register KIND when Windows does not already have that class."
@@ -2301,6 +2338,22 @@ added.  Returns NIL when the file cannot be loaded."
                      (should= red (logand (get-text-color hdc) #xffffff))
                      (should= #x000000 (logand (get-bk-color hdc) #xffffff))))
                (release-dc (sb-sys:int-sap 0) hdc))))
+      (when (member frame (frame-manager-frames manager) :test #'eq)
+        (disown-frame manager frame)))))
+
+(behavior 'colored-window-proc
+  (setf *window-proc-error* nil)
+  (let ((manager (make-windows-frame-manager))
+        (frame (make-application-frame 'windows-color-frame
+                                       :background +black+)))
+    (unwind-protect
+         (progn
+           (adopt-frame manager frame)
+           (enable-frame manager frame)
+           (loop repeat 32
+                 while (dispatch-queued-message))
+           (should-be-null *window-proc-error*)
+           (disable-frame manager frame))
       (when (member frame (frame-manager-frames manager) :test #'eq)
         (disown-frame manager frame)))))
 

@@ -46,7 +46,9 @@
            :gadget
            :gadget-activate-callback
            :gadget-active-p
+           :gadget-background
            :gadget-client
+           :gadget-foreground
            :gadget-id
            :gadget-items
            :gadget-label
@@ -106,7 +108,17 @@
     :initarg :text-style
     :initform nil
     :accessor gadget-text-style
-    :documentation "The text style of this gadget.  NIL uses the port default."))
+    :documentation "The text style of this gadget.  NIL uses the port default.")
+   (foreground
+    :initarg :foreground
+    :initform nil
+    :accessor gadget-foreground
+    :documentation "The text color of this gadget.  NIL uses the system color.")
+   (background
+    :initarg :background
+    :initform nil
+    :accessor gadget-background
+    :documentation "The fill color of this gadget.  NIL uses the system color."))
   (:documentation
    "A sheet the frame manager realizes as a native control.  A native
 control does not hold output records."))
@@ -124,6 +136,15 @@ control does not hold output records."))
     (should-be-null (gadget-text-style gadget))
     (setf (gadget-text-style gadget) :sample)
     (should-eq :sample (gadget-text-style gadget))))
+
+(behavior 'gadget-foreground
+  (let ((gadget (make-instance 'basic-gadget)))
+    (should-be-null (gadget-foreground gadget))
+    (should-be-null (gadget-background gadget))
+    (setf (gadget-foreground gadget) :orange)
+    (setf (gadget-background gadget) :black)
+    (should-eq :orange (gadget-foreground gadget))
+    (should-eq :black (gadget-background gadget))))
 
 (defclass value-gadget (gadget)
   ((value

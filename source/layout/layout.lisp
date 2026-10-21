@@ -48,6 +48,7 @@
            :make-space-requirement
            :merge-user-space
            :outlining
+           :outlining-ink
            :outlining-pane
            :register-pane-class
            :space-requirement
@@ -398,9 +399,19 @@ the space a parent is willing to offer."))
   (:documentation "A pane that leaves a margin around its one child."))
 
 (defclass outlining-pane (spacing-pane)
-  ()
+  ((ink
+    :initarg :ink
+    :initform nil
+    :accessor outlining-ink
+    :documentation "The color of the border.  NIL draws no border."))
   (:documentation
    "A pane that leaves room for a border around its one child."))
+
+(behavior 'outlining-ink
+  (let ((pane (make-instance 'outlining-pane)))
+    (should-be-null (outlining-ink pane))
+    (setf (outlining-ink pane) :mark)
+    (should-eq :mark (outlining-ink pane))))
 
 (defmethod initialize-instance :after ((pane spacing-pane) &key contents)
   (when contents

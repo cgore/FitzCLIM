@@ -47,6 +47,7 @@
            :define-application-frame
            :execute-frame-command
            :find-pane-named
+           :frame-background
            :frame-command-table
            :frame-current-layout
            :frame-exit
@@ -117,7 +118,13 @@
     :initarg :height
     :initform 300
     :accessor frame-height
-    :documentation "The height offered to the top-level sheet."))
+    :documentation "The height offered to the top-level sheet.")
+   (background
+    :initarg :background
+    :initform nil
+    :accessor frame-background
+    :documentation "The color behind the frame's panes.  NIL uses the
+    system color."))
   (:documentation
    "An application.  Its command table supplies the commands the
    command loop runs."))
@@ -125,6 +132,12 @@
 (defun framep (object)
   "Return true if OBJECT is an application frame."
   (typep object 'application-frame))
+
+(behavior 'frame-background
+  (let ((frame (make-instance 'application-frame)))
+    (should-be-null (frame-background frame))
+    (setf (frame-background frame) :black)
+    (should-eq :black (frame-background frame))))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
 (defun parse-frame-command-table (frame-name options)

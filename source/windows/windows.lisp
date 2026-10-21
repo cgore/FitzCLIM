@@ -81,6 +81,7 @@
     (load-shared-object "kernel32.dll")
     (load-shared-object "user32.dll")
     (load-shared-object "gdi32.dll")
+    (load-shared-object "uxtheme.dll")
     (setf *windows-libraries-loaded* t)))
 
 (load-windows-libraries)
@@ -111,6 +112,8 @@
 (defparameter +wm-keydown+ #x0100)
 (defparameter +wm-keyup+ #x0101)
 (defparameter +wm-char+ #x0102)
+(defparameter +wm-erasebkgnd+ #x0014)
+(defparameter +wm-ctlcolorstatic+ #x0138)
 (defparameter +wm-command+ #x0111)
 (defparameter +mf-string+ #x0000)
 (defparameter +mf-popup+ #x0010)
@@ -130,6 +133,7 @@
 (defparameter +ps-dash+ 1)
 (defparameter +null-brush+ 5)
 (defparameter +transparent+ 1)
+(defparameter +opaque+ 2)
 (defparameter +fw-normal+ 400)
 (defparameter +fw-bold+ 700)
 (defparameter +nonantialiased-quality+ 3)
@@ -393,6 +397,17 @@ so a Lisp range is scaled onto 0 through 1000.")
 (define-alien-routine ("SetBkMode" set-bk-mode) (signed 32)
   (hdc system-area-pointer)
   (mode (signed 32)))
+(define-alien-routine ("SetBkColor" set-bk-color) (unsigned 32)
+  (hdc system-area-pointer)
+  (color (unsigned 32)))
+(define-alien-routine ("GetTextColor" get-text-color) (unsigned 32)
+  (hdc system-area-pointer))
+(define-alien-routine ("GetBkColor" get-bk-color) (unsigned 32)
+  (hdc system-area-pointer))
+(define-alien-routine ("SetWindowTheme" set-window-theme) (signed 32)
+  (hwnd system-area-pointer)
+  (sub-app system-area-pointer)
+  (sub-id system-area-pointer))
 (define-alien-routine ("TextOutW" text-out-w) (signed 32)
   (hdc system-area-pointer)
   (x (signed 32))
@@ -933,6 +948,43 @@ pane so the next paint replays the output history."))
   (logior (round (* 255 red))
           (ash (round (* 255 green)) 8)
           (ash (round (* 255 blue)) 16)))
+
+(defun color-colorref (color)
+  "Return a COLORREF for COLOR, or NIL when it has no opaque color."
+  (when (colored-design? color)
+    (multiple-value-bind (red green blue opacity) (design-rgba color)
+      (when (>= opacity 1/2)
+        (rgb-colorref red green blue)))))
+
+(defvar *color-brushes* (make-hash-table :test #'eql)
+  "COLORREF values mapped to a brush kept for the life of the process.")
+
+(defun color-brush (colorref)
+  "Return a solid brush for COLORREF, creating it once."
+  (or (gethash colorref *color-brushes*)
+      (setf (gethash colorref *color-brushes*)
+            (create-solid-brush colorref))))
+
+(defun fill-color-rect (hdc color left top right bottom)
+  "Fill the rectangle with COLOR.  Right and bottom are exclusive."
+  (let ((colorref (color-colorref color)))
+    (when (and colorref (< left right) (< top bottom))
+      (with-alien ((rect win-rect))
+        (setf (slot rect 'left) left
+              (slot rect 'top) top
+              (slot rect 'right) right
+              (slot rect 'bottom) bottom)
+        (fill-rect hdc (addr rect) (color-brush colorref))))))
+
+(defun stroke-color-rect (hdc color left top right bottom)
+  "Stroke the rectangle with a one-pixel pen of COLOR."
+  (let ((colorref (color-colorref color)))
+    (when (and colorref (< left right) (< top bottom))
+      (call-with-pen hdc colorref 1 nil
+        (lambda ()
+          (call-with-brush hdc colorref nil
+            (lambda ()
+              (gdi-rectangle hdc left top right bottom))))))))
 
 (defun ink-colorref (medium ink)
   "Return a COLORREF for INK, :FLIP for flipping ink, or NIL to skip it.
@@ -1503,9 +1555,105 @@ DRAWER is called with the device context and a COLORREF."
         ((= message +wm-keyup+)
          (note-key sheet 'key-release-event wparam nil))))))
 
+(defun apply-control-color (sheet hdc)
+  "Apply SHEET's colors to HDC.  Return a brush integer, or NIL."
+  (when (and (gadgetp sheet)
+             (plusp (sb-sys:sap-int hdc))
+             (or (gadget-foreground sheet) (gadget-background sheet)))
+    (let ((foreground (color-colorref (gadget-foreground sheet)))
+          (background (color-colorref (gadget-background sheet))))
+      (when foreground
+        (set-text-color hdc foreground))
+      (when background
+        (set-bk-color hdc background)
+        (set-bk-mode hdc +opaque+))
+      (when background
+        (sb-sys:sap-int (color-brush background))))))
+
+(defun draw-frame-client (frame hdc)
+  "Fill FRAME's background and stroke the borders of its outlining panes."
+  (let ((top (frame-top-level-sheet frame)))
+    (when (and top (frame-background frame))
+      (multiple-value-bind (width height) (sheet-pixel-size top)
+        (fill-color-rect hdc (frame-background frame) 0 0 width height)))
+    (when top
+      (map-over-sheets
+       (lambda (sheet)
+         (when (and (typep sheet 'outlining-pane) (outlining-ink sheet))
+           (multiple-value-bind (x y) (sheet-in-root sheet top)
+             (multiple-value-bind (width height) (sheet-pixel-size sheet)
+               (stroke-color-rect hdc (outlining-ink sheet)
+                                  (+ x 1) (+ y 1)
+                                  (+ x width -1) (+ y height -1))))))
+       top))))
+
+(defun frame-client-painted? (frame)
+  "Return true when FRAME paints its own background or a border."
+  (when frame
+    (or (frame-background frame)
+        (and (frame-top-level-sheet frame)
+             (block found
+               (map-over-sheets
+                (lambda (sheet)
+                  (when (and (typep sheet 'outlining-pane)
+                             (outlining-ink sheet))
+                    (return-from found t)))
+                (frame-top-level-sheet frame)))))))
+
+(defun paint-frame-client (hwnd)
+  "Paint the background and borders of the frame at HWND."
+  (let* ((paint (make-alien (unsigned 8) 128))
+         (sap (alien-sap paint))
+         (frame (mirror-frame hwnd)))
+    (unwind-protect
+        (let ((hdc (begin-paint (hwnd-sap hwnd) sap)))
+          (unwind-protect
+              (when (and frame (plusp (sb-sys:sap-int hdc)))
+                (draw-frame-client frame hdc))
+            (end-paint (hwnd-sap hwnd) sap)))
+      (free-alien paint))))
+
+(defun frame-client-pixel (frame x y)
+  "Return the COLORREF draw-frame-client would paint at X and Y."
+  (let ((top (frame-top-level-sheet frame)))
+    (multiple-value-bind (width height) (sheet-pixel-size top)
+      (let* ((screen (get-dc (sb-sys:int-sap 0)))
+             (memory (create-compatible-dc screen))
+             (bitmap (create-compatible-bitmap screen (max 1 width) (max 1 height)))
+             (old (select-object memory bitmap)))
+        (unwind-protect
+            (progn
+              (fill-color-rect memory +white+ 0 0 width height)
+              (draw-frame-client frame memory)
+              (logand (get-pixel memory x y) #xffffff))
+          (select-object memory old)
+          (delete-object bitmap)
+          (delete-dc memory)
+          (release-dc (sb-sys:int-sap 0) screen))))))
+
 (defun handle-message (hwnd message wparam lparam)
   "Handle one message for HWND.  Return a result when this port handles it."
   (cond
+    ((= message +wm-erasebkgnd+)
+     (let ((frame (mirror-frame hwnd)))
+       (when (and frame (frame-background frame) (plusp wparam))
+         (let ((top (frame-top-level-sheet frame)))
+           (when top
+             (multiple-value-bind (width height) (sheet-pixel-size top)
+               (fill-color-rect (sb-sys:int-sap wparam)
+                                (frame-background frame)
+                                0 0 width height))))
+         (values t 1))))
+    ((= message +wm-ctlcolorstatic+)
+     (let ((brush (apply-control-color
+                   (mirror-sheet (ldb (byte 64 0) lparam))
+                   (sb-sys:int-sap wparam))))
+       (when brush
+         (values t brush))))
+    ((and (= message +wm-paint+)
+          (frame-client-painted? (mirror-frame hwnd)))
+     (paint-frame-client hwnd)
+     (values t 0))
     ((= message +wm-command+)
      (handle-command wparam lparam)
      (values t 0))
@@ -1625,6 +1773,9 @@ DRAWER is called with the device context and a COLORREF."
                                    (next-control-id))))
           (remember-mirror sheet (sb-sys:sap-int hwnd))
           (assign-control-font sheet)
+          (when (and (gadgetp sheet)
+                     (or (gadget-foreground sheet) (gadget-background sheet)))
+            (disable-window-theme (sheet-mirror sheet)))
           (when (typep sheet 'application-pane)
             (ensure-gdi-medium sheet))
           (let ((realize (windows-gl-function "REALIZE-OPENGL-PANE")))
@@ -1989,6 +2140,32 @@ visible window, so an unshown frame does not block the command loop."
   (declare (ignore style))
   (assign-control-font gadget))
 
+(defun disable-window-theme (hwnd)
+  "Draw HWND with the classic control colors instead of the visual style."
+  (with-utf16 (empty "")
+    (set-window-theme (hwnd-sap hwnd) (alien-sap empty) (alien-sap empty))))
+
+(defun note-control-color (gadget)
+  "Ask GADGET to paint again when it has a window."
+  (when (sheet-mirror gadget)
+    (when (or (gadget-foreground gadget) (gadget-background gadget))
+      (disable-window-theme (sheet-mirror gadget)))
+    (invalidate-rect (hwnd-sap (sheet-mirror gadget)) (sb-sys:int-sap 0) 1)))
+
+(defmethod (setf gadget-foreground) :after (color (gadget gadget))
+  (declare (ignore color))
+  (note-control-color gadget))
+
+(defmethod (setf gadget-background) :after (color (gadget gadget))
+  (declare (ignore color))
+  (note-control-color gadget))
+
+(defmethod (setf frame-background) :after (color (frame application-frame))
+  (declare (ignore color))
+  (let ((top (frame-top-level-sheet frame)))
+    (when (and top (sheet-mirror top))
+      (invalidate-rect (hwnd-sap (sheet-mirror top)) (sb-sys:int-sap 0) 1))))
+
 (defun null-terminated-utf16 (buffer max)
   "Return the text in BUFFER, which holds at most MAX UTF-16 units."
   (let ((length 0))
@@ -2076,6 +2253,54 @@ added.  Returns NIL when the file cannot be loaded."
                (should-equal "Times New Roman" face)
                (should= +fw-normal+ weight)
                (should-be-true (minusp height)))))
+      (when (member frame (frame-manager-frames manager) :test #'eq)
+        (disown-frame manager frame)))))
+
+(define-application-frame windows-color-frame ()
+  ()
+  (:pretty-name "Windows Color")
+  (:panes
+   (plain :label :label "Plain")
+   (colored :label :label "Colored"
+            :foreground (make-rgb-color 1 0 0)
+            :background +black+))
+  (:layouts
+   (default (outlining (:thickness 8 :ink (make-rgb-color 0 1 0))
+              (vertically () plain colored))))
+  (:geometry 80 40))
+
+(behavior 'frame-client-pixel
+  (let ((manager (make-windows-frame-manager))
+        (frame (make-application-frame 'windows-color-frame :background +black+))
+        (red #x0000ff)
+        (green #x00ff00))
+    (unwind-protect
+         (progn
+           (should= #x000000 (frame-client-pixel frame 0 0))
+           (should= green (frame-client-pixel frame 1 10))
+           (should= #x000000 (frame-client-pixel frame 6 6))
+           (adopt-frame manager frame)
+           (let ((top (frame-top-level-sheet frame))
+                 (plain (find-pane-named frame 'plain))
+                 (colored (find-pane-named frame 'colored))
+                 (hdc (get-dc (sb-sys:int-sap 0))))
+             (unwind-protect
+                 (progn
+                   (multiple-value-bind (handled brush)
+                       (handle-message (sheet-mirror top) +wm-ctlcolorstatic+
+                                       (sb-sys:sap-int hdc)
+                                       (sheet-mirror plain))
+                     (declare (ignore brush))
+                     (should-be-null handled))
+                   (multiple-value-bind (handled brush)
+                       (handle-message (sheet-mirror top) +wm-ctlcolorstatic+
+                                       (sb-sys:sap-int hdc)
+                                       (sheet-mirror colored))
+                     (should-be-true handled)
+                     (should-be-true (plusp brush))
+                     (should= red (logand (get-text-color hdc) #xffffff))
+                     (should= #x000000 (logand (get-bk-color hdc) #xffffff))))
+               (release-dc (sb-sys:int-sap 0) hdc))))
       (when (member frame (frame-manager-frames manager) :test #'eq)
         (disown-frame manager frame)))))
 

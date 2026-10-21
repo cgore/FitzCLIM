@@ -59,6 +59,10 @@ that table.  The default name is \texttt{define-\textit{frame}-command}.
 \texttt{nil} for none.  \texttt{:disabled-commands} names commands that
 start disabled.  \texttt{command-enabled} turns one on or off.
 \texttt{:top-level} names the function that runs the command loop.
+A command argument may name a \texttt{:gesture}.  That gesture on a
+presentation of the argument's type runs the command.  The other
+arguments take their \texttt{:default} values.  \texttt{:keystroke}
+on the command is a character that runs it from the menu.
 \texttt{:pane} supplies one pane.  \texttt{:panes} and \texttt{:layouts}
 supply named panes and more than one arrangement.
 

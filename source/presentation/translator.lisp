@@ -235,6 +235,44 @@ matched against the press that started the drag."
      ,arglist
      ,@body))
 
+(defun install-command-argument-translator (command-name command-table argument)
+  "Define the translator that ARGUMENT's :GESTURE asks for.
+ARGUMENT is (name type . options).  A gesture on that type runs
+COMMAND-NAME with the presented object as this argument.  The other
+arguments use their :DEFAULT values."
+  (let* ((options (rest (rest argument)))
+         (gesture (getf options :gesture))
+         (type (second argument))
+         (command (find-command command-name command-table))
+         (translator-name
+           (intern (format nil "~A-~A-GESTURE"
+                           command-name
+                           (first argument))
+                   (symbol-package command-name))))
+    (setf *presentation-translators*
+          (cons (make-instance 'presentation-translator
+                               :name translator-name
+                               :from-type type
+                               :to-type `(command :command-table ,command-table)
+                               :command-table command-table
+                               :gesture gesture
+                               :tester nil
+                               :documentation (getf options :documentation)
+                               :menu (getf options :menu)
+                               :priority -1
+                               :command-name command-name
+                               :body (lambda (object &key &allow-other-keys)
+                                       (mapcar (lambda (one)
+                                                 (if (eq (first one) (first argument))
+                                                     object
+                                                     (getf (rest (rest one)) :default)))
+                                               (command-arguments command))))
+                (remove translator-name *presentation-translators*
+                        :key #'presentation-translator-name)))
+    translator-name))
+
+(setf *command-argument-translator* #'install-command-argument-translator)
+
 (defun command-table-ancestor? (table ancestor)
   "Return true if TABLE is ANCESTOR or inherits from ANCESTOR."
   (let ((table (if (command-table-p table) table (find-command-table table)))
@@ -527,10 +565,13 @@ Return NIL when no translator applies."
     :accessor selected-starship))
   (:command-table (presentation-frame)))
 
-(define-command (com-select-starship :command-table presentation-frame :name t)
-    ((ship starship))
+(define-command (com-select-starship :command-table presentation-frame :name t
+                                     :keystroke #\s)
+    ((ship starship :gesture :select)
+     (note string :default "kept"))
   "Remember SHIP on the current frame and return it."
-  (setf (selected-starship *application-frame*) ship))
+  (setf (selected-starship *application-frame*) ship)
+  note)
 
 (define-presentation-to-command-translator select-starship
     (starship com-select-starship presentation-frame
@@ -539,7 +580,7 @@ Return NIL when no translator applies."
      :menu t
      :priority 1)
     (object)
-  (list object))
+  (list object "kept"))
 
 (define-presentation-to-command-translator reject-empty-starship
     (starship com-select-starship presentation-frame
@@ -571,7 +612,7 @@ Return NIL when no translator applies."
          (presentation (make-presentation "Nostromo" 'starship))
          (press (make-instance 'pointer-button-press-event :button :left))
          (menu (make-instance 'pointer-button-press-event :button :right)))
-    (should-equal "Nostromo"
+    (should-equal "kept"
                   (execute-presentation-gesture frame presentation press))
     (should-equal "Nostromo" (selected-starship frame))
     (should-be-null (command-from-presentation presentation menu
@@ -583,6 +624,8 @@ Return NIL when no translator applies."
                               presentation 'command 'presentation-frame
                               :event press))))
       (should-eq 'select-starship (presentation-translator-name translator))
+      (should-eq 'com-select-starship
+                 (command-for-menu-keystroke (frame-command-table frame) #\s))
       (should-eq t (presentation-translator-menu translator))
       (should-equal "Select a starship"
                     (with-output-to-string (stream)
@@ -607,8 +650,28 @@ Return NIL when no translator applies."
                        :frame frame
                        :event press)))
     (setf (frame-pending-commands frame)
-          (list (accept-frame-command frame "Select Starship Sulaco")))
+          (list (accept-frame-command frame "Select Starship Sulaco kept")))
     (should-eq frame (run-frame-top-level frame))
-    (should-equal "Sulaco" (selected-starship frame))))
+    (should-equal "Sulaco" (selected-starship frame)))
+  (let* ((frame (make-application-frame 'presentation-frame))
+         (presentation (make-presentation "Nostromo" 'starship))
+         (press (make-instance 'pointer-button-press-event :button :left)))
+    (setf *presentation-translators*
+          (remove 'select-starship *presentation-translators*
+                  :key #'presentation-translator-name))
+    (unwind-protect
+         (let ((command (command-from-presentation presentation press
+                                                   (frame-command-table frame))))
+           (should-eq 'com-select-starship (first command))
+           (should-equal "Nostromo" (second command))
+           (should-equal "kept" (third command)))
+      (define-presentation-to-command-translator select-starship
+          (starship com-select-starship presentation-frame
+           :gesture :select
+           :documentation "Select a starship"
+           :menu t
+           :priority 1)
+          (object)
+        (list object "kept")))))
 
 (setf *default-command-table* nil)

@@ -152,7 +152,8 @@ command table names.  Redefining a table replaces it."
    (arguments
     :initarg :arguments
     :reader command-arguments
-    :documentation "A list of (name type) pairs.")
+    :documentation "A list of (name type . options).  OPTIONS holds
+    the keywords from DEFINE-COMMAND, such as :GESTURE and :DEFAULT.")
    (function
     :initarg :function
     :reader command-function))
@@ -192,8 +193,8 @@ A leading COM- is dropped, and hyphens become spaces."
                                      &key (name t) menu arguments (errorp t))
   "Add the function COMMAND-NAME to COMMAND-TABLE.
 NAME is T, NIL, or the command-line string.  MENU is T, NIL, or the
-menu string.  ARGUMENTS is a list of (name type) pairs.  With ERRORP
-false, a command already in the table is replaced."
+menu string.  ARGUMENTS is a list of (name type . options).  With
+ERRORP false, a command already in the table is replaced."
   (let ((table (if (command-table-p command-table)
                    command-table
                    (find-command-table command-table)))

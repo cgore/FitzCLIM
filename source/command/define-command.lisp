@@ -36,7 +36,8 @@
   (:use :common-lisp
         :sigma/behave
         :FitzCLIM/command)
-  (:export :*command-argument-typep*
+  (:export :*command-argument-translator*
+           :*command-argument-typep*
            :define-command))
 (in-package :FitzCLIM/command/define-command)
 
@@ -51,19 +52,32 @@ unquoted."
       type))
 
 (defun parse-define-command-name (spec)
-  "Return the command name, command table, line name, and menu of SPEC."
+  "Return the command name, command table, line name, menu, and keystroke of SPEC."
   (if (symbolp spec)
-      (values spec *default-command-table* t nil)
+      (values spec *default-command-table* t nil nil)
       (let ((name (first spec))
             (table *default-command-table*)
             (line-name t)
-            (menu nil))
+            (menu nil)
+            (keystroke nil))
         (loop for (key value) on (rest spec) by #'cddr
               do (ecase key
                    (:command-table (setf table value))
                    (:name (setf line-name value))
-                   (:menu (setf menu value))))
-        (values name table line-name menu)))))
+                   (:menu (setf menu value))
+                   (:keystroke (setf keystroke value))))
+        (values name table line-name menu keystroke))))
+
+(defun parse-command-argument (argument)
+  "Return the parameter, type, and option plist of ARGUMENT.
+ARGUMENT is (name type) or (name type &rest options)."
+  (unless (and (consp argument) (symbolp (first argument)))
+    (error "A command argument must be a list starting with a name."))
+  (unless (rest argument)
+    (error "The command argument ~S needs a type." (first argument)))
+  (values (first argument)
+          (command-type-specifier (second argument))
+          (rest (rest argument))))
 
 (defvar *command-argument-typep* #'typep
   "Function of an object and a type specifier.
@@ -71,32 +85,41 @@ Command functions call it before the body runs.  It starts as TYPEP.
 The presentation protocol replaces it so a command argument may be a
 presentation type.")
 
+(defvar *command-argument-translator* nil
+  "A function of a command name, a command table, and an argument, or NIL.
+DEFINE-COMMAND calls it for each argument that has a :GESTURE.  The
+argument is (name type . options).  The presentation module sets it
+so a gesture on that type runs the command.")
+
 (defmacro define-command (name-and-options arguments &body body)
   "Define a command and add it to a command table.
 NAME-AND-OPTIONS is a symbol, or a list (name :command-table table
-:name line-name :menu menu).  A symbol uses *DEFAULT-COMMAND-TABLE*.
-Each argument is (name type) or (name type &rest options).  TYPE is a
-Common Lisp type specifier or a quoted specifier.  The command
-function checks each argument with *COMMAND-ARGUMENT-TYPEP*.  The
-options are kept for later and are not interpreted yet.  Redefining a
-command replaces its table entry."
-  (multiple-value-bind (name table line-name menu)
+:name line-name :menu menu :keystroke character).  A symbol uses
+*DEFAULT-COMMAND-TABLE*.  Each argument is (name type) or (name type
+&rest options).  TYPE is a Common Lisp type specifier or a quoted
+specifier.  The command function checks each argument with
+*COMMAND-ARGUMENT-TYPEP*.  A :GESTURE option is handed to
+*COMMAND-ARGUMENT-TRANSLATOR* when that is set.  :DEFAULT and the
+other options are stored with the argument.  Redefining a command
+replaces its table entry."
+  (multiple-value-bind (name table line-name menu keystroke)
       (parse-define-command-name name-and-options)
     (unless table
       (error "DEFINE-COMMAND needs a command table for ~S." name))
     (let ((parameters nil)
           (checks nil)
-          (stored nil))
+          (stored nil)
+          (gestures nil))
       (dolist (argument arguments)
-        (unless (and (consp argument) (symbolp (first argument)))
-          (error "A command argument must be a list starting with a name."))
-        (let ((parameter (first argument))
-              (type (command-type-specifier (second argument))))
+        (multiple-value-bind (parameter type options)
+            (parse-command-argument argument)
           (push parameter parameters)
           (push `(unless (funcall *command-argument-typep* ,parameter ',type)
                    (error 'type-error :datum ,parameter :expected-type ',type))
                 checks)
-          (push (list parameter type) stored)))
+          (push `(list ',parameter ',type ,@options) stored)
+          (when (getf options :gesture)
+            (push parameter gestures))))
       `(progn
          (defun ,name ,(nreverse parameters)
            ,@(nreverse checks)
@@ -104,8 +127,24 @@ command replaces its table entry."
          (add-command-to-command-table ',name ',table
                                        :name ,line-name
                                        :menu ',menu
-                                       :arguments ',(nreverse stored)
+                                       :arguments (list ,@(nreverse stored))
                                        :errorp nil)
+         ,@(when (and keystroke (characterp keystroke))
+             `((add-menu-item-to-command-table ',table
+                                               ,(if (stringp menu)
+                                                    menu
+                                                    (command-line-name-from-symbol name))
+                                               :command ',name
+                                               :keystroke ,keystroke
+                                               :errorp nil)))
+         ,@(mapcar (lambda (parameter)
+                     `(when *command-argument-translator*
+                        (funcall *command-argument-translator*
+                                 ',name ',table
+                                 (assoc ',parameter
+                                        (command-arguments
+                                         (find-command ',name ',table))))))
+                   (nreverse gestures))
          ',name))))
 
 (define-command-table command-macro-tests)
@@ -129,7 +168,9 @@ command replaces its table entry."
     (should-equal '(("Add" com-add)) (command-table-menu table))
     (should= 7 (funcall (command-function (find-command 'com-add table)) 3 4))
     (should-equal '((left integer) (right integer))
-                  (command-arguments (find-command 'com-add table)))
+                  (mapcar (lambda (argument)
+                            (list (first argument) (second argument)))
+                          (command-arguments (find-command 'com-add table))))
     (should-be-null (command-line-name (find-command 'com-hidden table)))
     (should-be-true (command-present-in-command-table-p 'com-add child))
     (should-be-false (command-present-in-command-table-p 'com-add child
@@ -145,4 +186,4 @@ command replaces its table entry."
   (should-be-true
    (handler-case
        (progn (com-add 1 "two") nil)
-     (error () t))))
+     (error () t)))))

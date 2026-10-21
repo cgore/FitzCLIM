@@ -46,6 +46,7 @@
            :command-menu
            :command-for-menu-keystroke
            :command-menu-item
+           :command-menu-item-documentation
            :command-menu-item-keystroke
            :command-menu-item-name
            :command-menu-item-type
@@ -352,7 +353,12 @@ appear, in the order MAP-OVER-COMMAND-TABLE-COMMANDS visits them."
     :initarg :keystroke
     :initform nil
     :reader command-menu-item-keystroke
-    :documentation "A character that runs this item, or NIL."))
+    :documentation "A character that runs this item, or NIL.")
+   (documentation
+    :initarg :documentation
+    :initform nil
+    :reader command-menu-item-documentation
+    :documentation "A short note for this item, or NIL."))
   (:documentation "One entry on a command table's menu."))
 
 (defun menu-item-value (type value)
@@ -377,13 +383,16 @@ STRING is the label.  TYPE is :COMMAND, :MENU, or :DIVIDER.  A command
 item's VALUE is a command name.  A menu item's VALUE is a command
 table or its name, and the item opens that table.  A divider ignores
 VALUE.  KEYSTROKE is a character that runs a command item, or NIL.
-DOCUMENTATION, TEXT-STYLE, and AFTER are accepted and ignored.
-Explicit items are not inherited.  With ERRORP true, a second item
-with the same label is an error.  With ERRORP false, that item is
-replaced."
-  (declare (ignore documentation text-style after))
+DOCUMENTATION is a short note.  TEXT-STYLE is accepted and ignored.
+AFTER is :START, :END, NIL, or the label of the item this one follows.
+:SORT keeps the labels in alphabetical order.  Explicit items are not
+inherited.  With ERRORP true, a second item with the same label is an
+error.  With ERRORP false, that item is replaced."
+  (declare (ignore text-style))
   (unless (or (null keystroke) (characterp keystroke))
     (error "A menu keystroke must be a character or NIL."))
+  (unless (or (null documentation) (stringp documentation))
+    (error "Menu documentation must be a string or NIL."))
   (let ((table (if (command-table-p command-table)
                    command-table
                    (find-command-table command-table))))
@@ -396,17 +405,58 @@ replaced."
       (when (and existing errorp)
         (error "The menu item ~S is already in ~S."
                string (command-table-name table)))
-      (let ((item (make-instance 'command-menu-item
-                                 :type type
-                                 :name string
-                                 :value (menu-item-value type value)
-                                 :keystroke keystroke)))
-        (if existing
-            (setf (%menu-items table)
-                  (substitute item existing (%menu-items table) :test #'eq))
-            (setf (%menu-items table)
-                  (append (%menu-items table) (list item))))
+      (let* ((item (make-instance 'command-menu-item
+                                  :type type
+                                  :name string
+                                  :value (menu-item-value type value)
+                                  :keystroke keystroke
+                                  :documentation documentation))
+             (without (if existing
+                          (remove existing (%menu-items table) :test #'eq)
+                          (%menu-items table)))
+             (placed (place-menu-item (append (command-menu-entries table)
+                                              without)
+                                      item after)))
+        (setf (%menu-items table)
+              (remove-if-not (lambda (one)
+                               (member one (cons item without) :test #'eq))
+                             placed))
         item))))
+
+(defun command-menu-entries (table)
+  "Return command menu items for the commands TABLE itself lists."
+  (let ((items nil))
+    (map-over-command-table-commands
+     (lambda (name command)
+       (when (command-menu command)
+         (push (make-instance 'command-menu-item
+                              :type :command
+                              :name (command-menu command)
+                              :value name)
+               items)))
+     table)
+    (nreverse items)))
+
+(defun place-menu-item (items item after)
+  "Return ITEMS with ITEM inserted where AFTER asks.
+:START puts it first.  :END and NIL put it last.  :SORT keeps the
+labels in alphabetical order.  A string names the item it follows."
+  (cond
+    ((eq after :start) (cons item items))
+    ((or (null after) (eq after :end)) (append items (list item)))
+    ((eq after :sort)
+     (sort (append items (list item)) #'string-lessp
+           :key #'command-menu-item-name))
+    ((stringp after)
+     (let ((position (position after items
+                               :key #'command-menu-item-name
+                               :test #'string=)))
+       (unless position
+         (error "There is no menu item named ~S." after))
+       (append (subseq items 0 (1+ position))
+               (list item)
+               (subseq items (1+ position)))))
+    (t (error "~S is not a menu position." after))))
 
 (defun command-menu-items (command-table)
   "Return the menu items of COMMAND-TABLE.
@@ -467,16 +517,21 @@ searched.  A table is visited once."
     (add-menu-item-to-command-table more "Extra" :command 'com-menu-extra
                                     :keystroke #\e :errorp nil)
     (add-menu-item-to-command-table more "Line" :divider nil :errorp nil)
+    (add-menu-item-to-command-table table "Later" :divider nil :errorp nil)
     (add-menu-item-to-command-table table "More" :menu more
                                     :documentation "Further commands."
+                                    :after "Plain"
                                     :errorp nil)
     (let ((items (command-menu-items table)))
-      (should= 2 (length items))
+      (should= 3 (length items))
       (should-eq :command (command-menu-item-type (first items)))
       (should-equal "Plain" (command-menu-item-name (first items)))
       (should-eq 'com-menu-plain (command-menu-item-value (first items)))
       (should-eq :menu (command-menu-item-type (second items)))
       (should-eq more (command-menu-item-value (second items)))
+      (should-equal "Further commands."
+                    (command-menu-item-documentation (second items)))
+      (should-equal "Later" (command-menu-item-name (third items)))
       (let ((children (command-menu-items more)))
         (should= 2 (length children))
         (should-eq :command (command-menu-item-type (first children)))

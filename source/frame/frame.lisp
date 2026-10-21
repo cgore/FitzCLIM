@@ -68,6 +68,10 @@
            :frame-pretty-name
            :frame-properties
            :frame-state
+           :frame-standard-input
+           :frame-standard-output
+           :frame-query-io
+           :frame-error-output
            :frame-top-level-sheet
            :frame-width
            :framep
@@ -75,6 +79,7 @@
            :*frame-input-waiter*
            :*frame-redisplayer*
            :*partial-command-reader*
+           :*command-line-reader*
            :layout-frame
            :make-application-frame
            :read-frame-command
@@ -459,6 +464,41 @@ A frame made with :PANE returns that one pane."
           (push (cdr pair) panes))))
     (nreverse panes)))
 
+(defun pane-class-named? (pane class-name)
+  "Return true if PANE's class, or one of its superclasses, is named CLASS-NAME.
+The comparison is by symbol name, so the pane package and this package
+may each have the name."
+  (some (lambda (class)
+          (let ((name (class-name class)))
+            (and (symbolp name)
+                 (string= (symbol-name name) (symbol-name class-name)))))
+        (sb-mop:class-precedence-list (class-of pane))))
+
+(defun pane-of-class (frame class-name)
+  "Return the first current pane of FRAME whose class is named CLASS-NAME.
+A subclass counts.  The name is compared so this module does not depend
+on the pane module."
+  (find-if (lambda (pane) (pane-class-named? pane class-name))
+           (frame-current-panes frame)))
+
+(defun frame-standard-output (frame)
+  "Return the first visible application pane of FRAME, or NIL."
+  (or (pane-of-class frame 'application-pane)
+      (pane-of-class frame 'interactor-pane)))
+
+(defun frame-standard-input (frame)
+  "Return the first visible interactor of FRAME, or its standard output."
+  (or (pane-of-class frame 'interactor-pane)
+      (frame-standard-output frame)))
+
+(defun frame-query-io (frame)
+  "Return the stream FRAME uses for queries."
+  (or (frame-standard-input frame) (frame-standard-output frame)))
+
+(defun frame-error-output (frame)
+  "Return the stream FRAME uses for errors."
+  (frame-standard-output frame))
+
 (defun frame-menu-table (frame)
   "Return the command table FRAME shows as its menu bar, or NIL."
   (let ((bar (frame-menu-bar frame)))
@@ -559,17 +599,48 @@ as it stands.")
     (apply (command-function (find-command command-name table))
            arguments)))
 
-(defun default-frame-top-level (frame &key prompt)
+(defvar *command-line-reader* nil
+  "A function of a frame and a stream, or NIL.
+The command loop calls it when the frame's interactor has a typed line
+and no gesture produced a command.  It returns a command, or NIL at
+the end of the input.  The presentation module sets it.")
+
+(defun prompt-for-command (frame stream prompt)
+  "Write PROMPT on STREAM.
+PROMPT is a string, or a function of the stream and the frame.  NIL
+writes Command: ."
+  (etypecase prompt
+    (null (write-string "Command: " stream))
+    (string (write-string prompt stream))
+    (function (funcall prompt stream frame)))
+  (terpri stream))
+
+(defun command-from-typed-line (frame prompt)
+  "Return the next typed command from FRAME's interactor, or NIL.
+NIL means the interactor has no input stream, or the line has ended."
+  (let ((stream (frame-standard-input frame)))
+    (when (and stream
+               (pane-class-named? stream 'interactor-pane)
+               (funcall (find-symbol "PANE-INPUT" :fitzclim/pane) stream)
+               *command-line-reader*)
+      (prompt-for-command frame stream prompt)
+      (funcall *command-line-reader*
+               frame
+               (funcall (find-symbol "PANE-INPUT" :fitzclim/pane) stream)))))
+
+(defun default-frame-top-level (frame &key (prompt "Command: "))
   "Read and run commands for FRAME until the input ends or FRAME-EXIT
-runs.  A shown frame waits for the next event.  An unshown frame
-returns when no command is waiting.  After a command, panes that have
-a display function are redrawn.  PROMPT is accepted for a command
-reader that writes one.  Return FRAME."
-  (declare (ignore prompt))
+runs.  A pending command or a pointer gesture runs first.  Otherwise
+a typed line on the interactor is read.  A shown frame with neither
+waits for the next event.  An unshown frame returns when no command
+is waiting.  After a command, panes that have a display function are
+redrawn.  PROMPT is a string or a function of a stream and the frame.
+Return FRAME."
   (let ((*application-frame* frame))
     (catch 'frame-exit
       (loop
-        (let ((command (read-frame-command frame)))
+        (let ((command (or (read-frame-command frame)
+                           (command-from-typed-line frame prompt))))
           (cond
             (command
              (execute-frame-command frame command)
@@ -580,14 +651,15 @@ reader that writes one.  Return FRAME."
             (t
              (return frame))))))))
 
-(defgeneric run-frame-top-level (frame)
+(defgeneric run-frame-top-level (frame &key &allow-other-keys)
   (:documentation
    "Run FRAME's command loop.  The function comes from the frame's
-:TOP-LEVEL option, and defaults to DEFAULT-FRAME-TOP-LEVEL."))
+:TOP-LEVEL option, and defaults to DEFAULT-FRAME-TOP-LEVEL.  Keyword
+arguments are passed to that function."))
 
-(defmethod run-frame-top-level ((frame application-frame))
+(defmethod run-frame-top-level ((frame application-frame) &rest keys &key &allow-other-keys)
   (let ((top-level (frame-top-level frame)))
-    (apply (first top-level) frame (rest top-level))))
+    (apply (first top-level) frame (append (rest top-level) keys))))
 
 (define-application-frame adder-frame ()
   ((total
@@ -690,6 +762,8 @@ reader that writes one.  Return FRAME."
        (error () t)))
     (should-equal '(default side-by-side) (frame-all-layouts frame))
     (should= 2 (length (frame-current-panes frame)))))
+
+
 
 (define-command-table other-menu)
 

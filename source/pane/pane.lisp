@@ -37,6 +37,7 @@
         :sigma/behave
         :FitzCLIM/sheet
         :FitzCLIM/event
+        :FitzCLIM/command/define-command
         :FitzCLIM/frame
         :FitzCLIM/medium
         :FitzCLIM/medium/drawing
@@ -47,7 +48,9 @@
         :FitzCLIM/layout)
   (:export :application-pane
            :find-innermost-applicable-presentation
+           :interactor-pane
            :pane-display-function
+           :pane-input
            :presentation-at-position))
 (in-package :FitzCLIM/pane)
 
@@ -147,7 +150,52 @@ NIL for CONTEXT-TYPE skips the translator check."
   (merge-user-space pane (make-space-requirement :width 200 :min-width 20 :max-width +fill+
                                                  :height 150 :min-height 20 :max-height +fill+)))
 
+(defclass interactor-pane (application-pane)
+  ((input
+    :initarg :input
+    :initform nil
+    :accessor pane-input
+    :documentation "A stream of typed lines, or NIL when this pane has
+    no typed input yet."))
+  (:documentation
+   "An application pane that also reads a command line.
+Typed input comes from PANE-INPUT.  Output is recorded like any other
+application pane."))
+
 (register-pane-class :application 'application-pane)
+(register-pane-class :interactor 'interactor-pane)
+
+(define-application-frame typed-frame ()
+  ((last
+    :initform nil
+    :accessor typed-last))
+  (:panes
+   (display :application :display-function 'show-typed
+            :width 80 :height 20)
+   (commands :interactor :width 80 :height 20))
+  (:layouts
+   (default (vertically () display commands))))
+
+(defun show-typed (frame pane)
+  "Write the last typed command's argument on PANE."
+  (when (typed-last frame)
+    (write-string (typed-last frame) pane)))
+
+(define-command (com-type :command-table typed-frame :name t)
+    ((text cl:string))
+  "Remember TEXT as the last typed command."
+  (setf (typed-last *application-frame*) text))
+
+(behavior 'typed-interactor-command
+  (let ((frame (make-application-frame 'typed-frame)))
+    (should-be-true (typep (frame-standard-input frame) 'interactor-pane))
+    (should-eq (find-pane-named frame 'display) (frame-standard-output frame))
+    (should-eq (frame-standard-input frame) (frame-query-io frame))
+    (should-eq (frame-standard-output frame) (frame-error-output frame))
+    (setf (pane-input (find-pane-named frame 'commands))
+          (make-string-input-stream "Type hello"))
+    (should-eq frame (run-frame-top-level frame :prompt "Go: "))
+    (should-equal "hello" (typed-last frame))))
 
 (behavior 'application-pane-space
   (let ((pane (make-pane :application :width 30 :max-width +fill+)))

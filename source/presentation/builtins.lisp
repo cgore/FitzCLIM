@@ -674,6 +674,16 @@ still required, so an empty line signals a parse error."
 
 (setf *partial-command-reader* #'read-frame-partial-command)
 
+(defun read-frame-command-line (frame stream)
+  "Read one command for FRAME from STREAM, or NIL at the end."
+  (let ((*default-command-table* (frame-command-table frame)))
+    (when (peek-char t stream nil nil)
+      (accept `(command :command-table
+                        ,(command-table-name (frame-command-table frame)))
+              :stream stream))))
+
+(setf *command-line-reader* #'read-frame-command-line)
+
 (defun read-partial-command (command stream view)
   "Fill the unsupplied arguments of COMMAND from STREAM.
 An argument that already has a value is kept.  A missing argument with

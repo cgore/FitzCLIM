@@ -651,6 +651,10 @@ Return NIL when no translator applies."
                        :event press)))
     (setf (frame-pending-commands frame)
           (list (accept-frame-command frame "Select Starship Sulaco kept")))
+    (should-equal "Sulaco"
+                  (second (accept-frame-command frame "Select Starship Sulaco")))
+    (should-equal "kept"
+                  (third (accept-frame-command frame "Select Starship Sulaco")))
     (should-eq frame (run-frame-top-level frame))
     (should-equal "Sulaco" (selected-starship frame)))
   (let* ((frame (make-application-frame 'presentation-frame))

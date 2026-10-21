@@ -648,12 +648,29 @@ The longest name that matches the tokens is chosen."
           do (write-char #\Space stream)
              (present argument :stream stream :type argument-type :view view))))
 
+(defun command-argument-default (argument)
+  "Return the :DEFAULT of ARGUMENT and true when one was supplied.
+ARGUMENT is (name type . options)."
+  (let ((options (rest (rest argument))))
+    (if (member :default options)
+        (values (getf options :default) t)
+        (values nil nil))))
+
+(defun accept-command-argument (argument stream view)
+  "Read ARGUMENT from STREAM, or use its :DEFAULT when the line has ended."
+  (multiple-value-bind (default supplied) (command-argument-default argument)
+    (if (and supplied (null (peek-char t stream nil nil)))
+        default
+        (accept (second argument) :stream stream :view view
+                :default default
+                :provide-default supplied))))
+
 (define-presentation-method accept ((type command) stream view &key)
   (let* ((table (or command-table *default-command-table*))
          (command (read-command-from-stream stream table)))
     (values (cons (command-name command)
-                  (loop for (nil argument-type) in (command-arguments command)
-                        collect (accept argument-type :stream stream :view view)))
+                  (loop for argument in (command-arguments command)
+                        collect (accept-command-argument argument stream view)))
             type)))
 
 (define-presentation-type (command-name &key (command-table nil))

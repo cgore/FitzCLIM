@@ -53,6 +53,9 @@
            :command-menu-items
            :command-name
            :command-present-in-command-table-p
+           :*numeric-argument-marker*
+           :partial-command-p
+           :*unsupplied-argument-marker*
            :command-table
            :command-table-inherit-from
            :command-table-menu
@@ -158,6 +161,17 @@ command table names.  Redefining a table replaces it."
     :initarg :function
     :reader command-function))
   (:documentation "A command stored with its function and its names."))
+
+(defvar *unsupplied-argument-marker* (make-symbol "UNSUPPLIED")
+  "The object that stands for an argument a command has not received.")
+
+(defvar *numeric-argument-marker* (make-symbol "NUMERIC")
+  "The object that stands for a numeric argument a keystroke supplies.")
+
+(defun partial-command-p (command)
+  "Return true if COMMAND still has an unsupplied argument."
+  (and (consp command)
+       (member *unsupplied-argument-marker* (rest command))))
 
 (defun command-line-name-from-symbol (symbol)
   "Return a command-line name for SYMBOL.

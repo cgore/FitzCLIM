@@ -62,7 +62,9 @@ start disabled.  \texttt{command-enabled} turns one on or off.
 A command argument may name a \texttt{:gesture}.  That gesture on a
 presentation of the argument's type runs the command.  The other
 arguments take their \texttt{:default} values.  A command line that
-ends early uses those defaults too.  \texttt{:keystroke}
+ends early uses those defaults too.  An argument a gesture did not
+supply is marked unsupplied.  Running that command fills the mark
+from the default, or asks for the value when there is none.  \texttt{:keystroke}
 on the command is a character that runs it from the menu.
 \texttt{:pane} supplies one pane.  \texttt{:panes} and \texttt{:layouts}
 supply named panes and more than one arrangement.

@@ -263,9 +263,12 @@ arguments use their :DEFAULT values."
                                :command-name command-name
                                :body (lambda (object &key &allow-other-keys)
                                        (mapcar (lambda (one)
-                                                 (if (eq (first one) (first argument))
-                                                     object
-                                                     (getf (rest (rest one)) :default)))
+                                                 (cond
+                                                   ((eq (first one) (first argument))
+                                                    object)
+                                                   ((member :default (rest (rest one)))
+                                                    (getf (rest (rest one)) :default))
+                                                   (t *unsupplied-argument-marker*)))
                                                (command-arguments command))))
                 (remove translator-name *presentation-translators*
                         :key #'presentation-translator-name)))
@@ -668,7 +671,18 @@ Return NIL when no translator applies."
                                                    (frame-command-table frame))))
            (should-eq 'com-select-starship (first command))
            (should-equal "Nostromo" (second command))
-           (should-equal "kept" (third command)))
+           (should-equal "kept" (third command))
+           (should-be-true (partial-command-p
+                            (list 'com-select-starship
+                                  "Nostromo"
+                                  *unsupplied-argument-marker*)))
+           (should-equal "kept"
+                         (execute-frame-command
+                          frame
+                          (list 'com-select-starship
+                                "Nostromo"
+                                *unsupplied-argument-marker*)))
+           (should-equal "Nostromo" (selected-starship frame)))
       (define-presentation-to-command-translator select-starship
           (starship com-select-starship presentation-frame
            :gesture :select

@@ -57,6 +57,11 @@
            :type-or-string))
 (in-package :FitzCLIM/presentation/builtins)
 
+(defvar *partial-command* nil
+  "A command whose unsupplied arguments ACCEPT of COMMAND should fill.
+NIL means ACCEPT reads a whole command.  The frame's partial-command
+reader binds it.")
+
 (defun parse-failure (control &rest arguments)
   "Signal a simple parse error from CONTROL and ARGUMENTS."
   (error 'simple-parse-error
@@ -656,6 +661,31 @@ ARGUMENT is (name type . options)."
         (values (getf options :default) t)
         (values nil nil))))
 
+(defun read-frame-partial-command (frame command)
+  "Fill COMMAND's unsupplied arguments from an empty line.
+Arguments that have a :DEFAULT take it.  An argument without one is
+still required, so an empty line signals a parse error."
+  (let ((*default-command-table* (frame-command-table frame))
+        (*partial-command* command))
+    (with-input-from-string (stream "")
+      (accept `(command :command-table
+                        ,(command-table-name (frame-command-table frame)))
+              :stream stream))))
+
+(setf *partial-command-reader* #'read-frame-partial-command)
+
+(defun read-partial-command (command stream view)
+  "Fill the unsupplied arguments of COMMAND from STREAM.
+An argument that already has a value is kept.  A missing argument with
+a :DEFAULT uses that value when the line has ended."
+  (let ((entry (find-command (first command) *default-command-table*)))
+    (cons (first command)
+          (loop for value in (rest command)
+                for argument in (command-arguments entry)
+                collect (if (eq value *unsupplied-argument-marker*)
+                            (accept-command-argument argument stream view)
+                            value)))))
+
 (defun accept-command-argument (argument stream view)
   "Read ARGUMENT from STREAM, or use its :DEFAULT when the line has ended."
   (multiple-value-bind (default supplied) (command-argument-default argument)
@@ -667,10 +697,13 @@ ARGUMENT is (name type . options)."
 
 (define-presentation-method accept ((type command) stream view &key)
   (let* ((table (or command-table *default-command-table*))
-         (command (read-command-from-stream stream table)))
-    (values (cons (command-name command)
-                  (loop for argument in (command-arguments command)
-                        collect (accept-command-argument argument stream view)))
+         (*default-command-table* table))
+    (values (if *partial-command*
+                (read-partial-command *partial-command* stream view)
+                (let ((command (read-command-from-stream stream table)))
+                  (cons (command-name command)
+                        (loop for argument in (command-arguments command)
+                              collect (accept-command-argument argument stream view)))))
             type)))
 
 (define-presentation-type (command-name &key (command-table nil))

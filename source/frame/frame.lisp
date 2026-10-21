@@ -74,6 +74,7 @@
            :*frame-event-reader*
            :*frame-input-waiter*
            :*frame-redisplayer*
+           :*partial-command-reader*
            :layout-frame
            :make-application-frame
            :read-frame-command
@@ -520,6 +521,12 @@ means an empty queue ends the loop, which is the windowless case.")
 The command loop calls it after a command runs, so panes with a
 display function can be drawn again.  The redisplay module sets it.")
 
+(defvar *partial-command-reader* nil
+  "A function of a frame and a partial command, or NIL.
+EXECUTE-FRAME-COMMAND calls it to fill arguments that a gesture left
+unsupplied.  The presentation module sets it.  NIL runs the command
+as it stands.")
+
 (defgeneric read-frame-command (frame)
   (:documentation
    "Return the next command for FRAME, or NIL when none is waiting.
@@ -541,11 +548,15 @@ display function can be drawn again.  The redisplay module sets it.")
 (defmethod execute-frame-command ((frame application-frame) command)
   (let* ((*application-frame* frame)
          (command-name (if (listp command) (first command) command))
-         (arguments (if (listp command) (rest command) nil)))
+         (arguments (if (listp command) (rest command) nil))
+         (table (frame-command-table frame)))
     (unless (command-enabled command-name frame)
       (error "The command ~S is not enabled in this frame." command-name))
-    (apply (command-function
-            (find-command command-name (frame-command-table frame)))
+    (when (and (partial-command-p command) *partial-command-reader*)
+      (setf command (funcall *partial-command-reader* frame command)
+            command-name (first command)
+            arguments (rest command)))
+    (apply (command-function (find-command command-name table))
            arguments)))
 
 (defun default-frame-top-level (frame &key prompt)

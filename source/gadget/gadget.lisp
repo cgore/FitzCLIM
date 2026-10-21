@@ -56,6 +56,7 @@
            :gadget-name-key
            :gadget-orientation
            :gadget-test
+           :gadget-text-style
            :gadget-value
            :gadget-value-changed-callback
            :gadget-value-key
@@ -100,7 +101,12 @@
     :initarg :active
     :initform t
     :accessor gadget-active-p
-    :documentation "True when the user can operate this gadget."))
+    :documentation "True when the user can operate this gadget.")
+   (text-style
+    :initarg :text-style
+    :initform nil
+    :accessor gadget-text-style
+    :documentation "The text style of this gadget.  NIL uses the port default."))
   (:documentation
    "A sheet the frame manager realizes as a native control.  A native
 control does not hold output records."))
@@ -112,6 +118,12 @@ control does not hold output records."))
 (defun gadgetp (object)
   "Return true if OBJECT is a gadget."
   (typep object 'gadget))
+
+(behavior 'gadget-text-style
+  (let ((gadget (make-instance 'basic-gadget)))
+    (should-be-null (gadget-text-style gadget))
+    (setf (gadget-text-style gadget) :sample)
+    (should-eq :sample (gadget-text-style gadget))))
 
 (defclass value-gadget (gadget)
   ((value

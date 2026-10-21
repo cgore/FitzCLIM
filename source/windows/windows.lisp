@@ -58,7 +58,8 @@
         :FitzCLIM/presentation/present
         :FitzCLIM/presentation/translator
         :FitzCLIM/port)
-  (:export :make-windows-frame-manager
+  (:export :load-private-font
+           :make-windows-frame-manager
            :windows-frame-manager
            :windows-port))
 (in-package :FitzCLIM/windows)
@@ -132,6 +133,11 @@
 (defparameter +fw-normal+ 400)
 (defparameter +fw-bold+ 700)
 (defparameter +nonantialiased-quality+ 3)
+(defparameter +cleartype-quality+ 5)
+(defparameter +wm-setfont+ #x0030)
+(defparameter +wm-getfont+ #x0031)
+(defparameter +fr-private+ #x10)
+(defparameter +logpixelsy+ 90)
 (defparameter +mk-shift+ 4)
 (defparameter +mk-control+ 8)
 (defparameter +bm-getcheck+ #x00F0)
@@ -408,6 +414,21 @@ so a Lisp range is scaled onto 0 through 1000.")
   (quality (unsigned 32))
   (pitch (unsigned 32))
   (face system-area-pointer))
+(define-alien-routine ("GetDeviceCaps" get-device-caps) (signed 32)
+  (hdc system-area-pointer)
+  (index (signed 32)))
+(define-alien-routine ("GetObjectW" get-object-w) (signed 32)
+  (object system-area-pointer)
+  (size (signed 32))
+  (buffer system-area-pointer))
+(define-alien-routine ("GetTextFaceW" get-text-face-w) (signed 32)
+  (hdc system-area-pointer)
+  (count (signed 32))
+  (face system-area-pointer))
+(define-alien-routine ("AddFontResourceExW" add-font-resource-ex-w) (signed 32)
+  (file system-area-pointer)
+  (flags (unsigned 32))
+  (reserved system-area-pointer))
 (define-alien-routine ("SaveDC" save-dc) (signed 32)
   (hdc system-area-pointer))
 (define-alien-routine ("RestoreDC" restore-dc) (signed 32)
@@ -1101,12 +1122,73 @@ in the sheet's coordinate system."
       (t "Segoe UI"))))
 
 (defun font-pitch (style)
-  "Return the pitch and family bits for STYLE."
+  "Return the pitch and family bits for STYLE.
+A named face leaves the pitch to the font.  A family keyword asks for
+a matching family."
   (let ((family (text-style-family (parse-text-style style))))
     (cond
+      ((stringp family) 0)
       ((eq family :fix) (logior 1 48))
       ((eq family :serif) (logior 2 16))
       (t (logior 2 32)))))
+
+(defun font-pixel-height (point-size)
+  "Return the negative character height of POINT-SIZE at the screen DPI."
+  (let* ((desktop (sb-sys:int-sap 0))
+         (hdc (get-dc desktop))
+         (dpi (if (plusp (sb-sys:sap-int hdc))
+                  (get-device-caps hdc +logpixelsy+)
+                  0)))
+    (when (plusp (sb-sys:sap-int hdc))
+      (release-dc desktop hdc))
+    (- (max 1 (round (* point-size (if (plusp dpi) dpi 96) 1/72))))))
+
+(defun create-control-font (style)
+  "Return an HFONT for STYLE.  NIL means the port's default style."
+  (let ((style (parse-text-style (or style *default-text-style*))))
+    (with-utf16 (face (font-face-name style))
+      (let ((font (create-font-w (font-pixel-height (text-style-point-size style))
+                                 0 0 0
+                                 (if (text-style-bold? style)
+                                     +fw-bold+
+                                     +fw-normal+)
+                                 (if (text-style-italic? style) 1 0)
+                                 0 0 1 0 0 +cleartype-quality+
+                                 (font-pitch style)
+                                 (alien-sap face))))
+        (when (plusp (sb-sys:sap-int font))
+          font)))))
+
+(defvar *control-fonts* (make-hash-table :test #'eql)
+  "HWND integers mapped to the HFONT assigned to that control.")
+
+(defun assign-control-font (sheet)
+  "Give SHEET's native control the font for its text style.
+The font stays alive until the control is destroyed.  A sheet with no
+window is left alone."
+  (when (and (gadgetp sheet) (sheet-mirror sheet))
+    (let ((font (create-control-font (gadget-text-style sheet)))
+          (hwnd (sheet-mirror sheet)))
+      (when font
+        (send-message hwnd +wm-setfont+ (sb-sys:sap-int font) 1)
+        (let ((previous (gethash hwnd *control-fonts*)))
+          (setf (gethash hwnd *control-fonts*) font)
+          (when (and previous (not (sb-sys:sap= previous font)))
+            (delete-object previous)))))))
+
+(defun release-control-font (hwnd)
+  "Delete the font assigned to HWND.  A second call does nothing."
+  (let ((font (gethash hwnd *control-fonts*)))
+    (remhash hwnd *control-fonts*)
+    (when font
+      (delete-object font)))
+  nil)
+
+(defun release-sheet-font (sheet)
+  "Delete the font assigned to SHEET's control."
+  (let ((hwnd (sheet-mirror sheet)))
+    (when hwnd
+      (release-control-font hwnd))))
 
 (defun text-origin (string x y align-x align-y style)
   "Return the top-left pixel of STRING drawn at the alignment point X, Y."
@@ -1542,6 +1624,7 @@ DRAWER is called with the device context and a COLORREF."
                                    (hwnd-sap (sheet-mirror root))
                                    (next-control-id))))
           (remember-mirror sheet (sb-sys:sap-int hwnd))
+          (assign-control-font sheet)
           (when (typep sheet 'application-pane)
             (ensure-gdi-medium sheet))
           (let ((realize (windows-gl-function "REALIZE-OPENGL-PANE")))
@@ -1561,6 +1644,7 @@ DRAWER is called with the device context and a COLORREF."
          (let ((sap (hwnd-sap hwnd)))
            (when (plusp (is-window sap))
              (destroy-window sap)))
+         (release-control-font hwnd)
          (forget-mirror descendant))))
    sheet))
 
@@ -1652,6 +1736,7 @@ children are parented to the frame window."))
             (when (plusp (is-window sap))
               (destroy-window sap)))
           (forget-mirror-frame hwnd)))
+      (map-over-sheets #'release-sheet-font top)
       (map-over-sheets #'forget-mirror top)))
   (setf (frame-manager-frames manager)
         (remove frame (frame-manager-frames manager) :test #'eq))
@@ -1899,6 +1984,100 @@ visible window, so an unshown frame does not block the command loop."
   (declare (ignore client))
   (when (sheet-mirror gadget)
     (enable-window (hwnd-sap (sheet-mirror gadget)) 0)))
+
+(defmethod (setf gadget-text-style) :after (style (gadget gadget))
+  (declare (ignore style))
+  (assign-control-font gadget))
+
+(defun null-terminated-utf16 (buffer max)
+  "Return the text in BUFFER, which holds at most MAX UTF-16 units."
+  (let ((length 0))
+    (loop for index from 0 below max
+          until (zerop (deref buffer index))
+          do (incf length))
+    (utf16-to-string buffer length)))
+
+(defun control-font-metrics (hwnd)
+  "Return the face, weight, and height of the font HWND is using.
+The face is the one GDI selected."
+  (let* ((handle (ldb (byte 64 0) (send-message hwnd +wm-getfont+ 0 0)))
+         (font (sb-sys:int-sap handle))
+         (hdc (get-dc (hwnd-sap hwnd))))
+    (unless (and (plusp handle) (plusp (sb-sys:sap-int hdc)))
+      (when (plusp (sb-sys:sap-int hdc))
+        (release-dc (hwnd-sap hwnd) hdc))
+      (return-from control-font-metrics (values nil nil nil)))
+    (unwind-protect
+         (let ((old (select-object hdc font))
+               (face-buffer (make-alien (unsigned 16) 64))
+               (logfont (make-alien (unsigned 8) 92)))
+           (unwind-protect
+                (let ((copied (get-text-face-w hdc 64 (alien-sap face-buffer)))
+                      (written (get-object-w font 92 (alien-sap logfont))))
+                  (values (when (plusp copied)
+                            (null-terminated-utf16 face-buffer 64))
+                          (when (>= written 20)
+                            (sb-sys:signed-sap-ref-32 (alien-sap logfont) 16))
+                          (when (>= written 4)
+                            (sb-sys:signed-sap-ref-32 (alien-sap logfont) 0))))
+             (select-object hdc old)
+             (free-alien face-buffer)
+             (free-alien logfont)))
+      (release-dc (hwnd-sap hwnd) hdc))))
+
+(defun load-private-font (pathname)
+  "Make the font file PATHNAME available to this process.
+Other programs do not see the font.  Returns the number of faces
+added.  Returns NIL when the file cannot be loaded."
+  (let ((file (probe-file pathname)))
+    (when file
+      (with-utf16 (name (namestring file))
+        (let ((count (add-font-resource-ex-w (alien-sap name)
+                                             +fr-private+
+                                             (sb-sys:int-sap 0))))
+          (when (plusp count)
+            count))))))
+
+(define-application-frame windows-font-frame ()
+  ()
+  (:pretty-name "Windows Font")
+  (:panes
+   (plain :label :label "Plain")
+   (styled :label :label "Styled"
+           :text-style (make-text-style :fix :bold 16)))
+  (:layouts
+   (default (vertically () plain styled)))
+  (:geometry 160 80))
+
+(behavior 'load-private-font
+  (should-be-null (load-private-font #p"C:/no/such/FitzCLIM-font.ttf"))
+  (should= 0 (font-pitch (make-text-style "Named Face" :roman 12)))
+  (let ((manager (make-windows-frame-manager))
+        (frame (make-application-frame 'windows-font-frame)))
+    (unwind-protect
+         (progn
+           (adopt-frame manager frame)
+           (let ((plain (find-pane-named frame 'plain))
+                 (styled (find-pane-named frame 'styled)))
+             (multiple-value-bind (face weight height)
+                 (control-font-metrics (sheet-mirror plain))
+               (should-equal "Segoe UI" face)
+               (should= +fw-normal+ weight)
+               (should-be-true (minusp height)))
+             (multiple-value-bind (face weight height)
+                 (control-font-metrics (sheet-mirror styled))
+               (should-equal "Consolas" face)
+               (should= +fw-bold+ weight)
+               (should-be-true (minusp height)))
+             (setf (gadget-text-style plain)
+                   (make-text-style :serif :roman 14))
+             (multiple-value-bind (face weight height)
+                 (control-font-metrics (sheet-mirror plain))
+               (should-equal "Times New Roman" face)
+               (should= +fw-normal+ weight)
+               (should-be-true (minusp height)))))
+      (when (member frame (frame-manager-frames manager) :test #'eq)
+        (disown-frame manager frame)))))
 
 (define-application-frame windows-gadget-frame ()
   ()

@@ -301,11 +301,14 @@ Code 0 is the A key."
 
 (defun install-cocoa-menu (frame)
   "Give FRAME a menu bar of the commands that have a menu string.
-The bar is installed as the application menu.  A frame with no such
-commands keeps no menu."
-  (let ((items (remove-if-not #'stringp
-                              (command-table-menu (frame-command-table frame))
-                              :key #'first)))
+The table comes from the frame's :MENU-BAR option.  The bar is
+installed as the application menu.  A frame with no menu bar, or
+with no such commands, keeps no menu."
+  (let* ((table (frame-menu-table frame))
+         (items (when table
+                  (remove-if-not #'stringp
+                                 (command-table-menu table)
+                                 :key #'first))))
     (when items
       (with-cocoa ()
         (ensure-view-events)

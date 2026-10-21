@@ -49,7 +49,18 @@ may run a command.
 
 An application pane is drawn by FitzCLIM.  It records output and holds
 presentations.  A command loop reads commands, from typing or from a gesture
-on a presentation, and runs them.
+on a presentation, and runs them.  After a command, panes that have a
+display function are drawn again.
+
+\texttt{define-application-frame} builds the frame class and its command
+table.  \texttt{:command-definer} names the macro that adds a command to
+that table.  The default name is \texttt{define-\textit{frame}-command}.
+\texttt{:menu-bar} chooses the command table shown as the menu bar, or
+\texttt{nil} for none.  \texttt{:disabled-commands} names commands that
+start disabled.  \texttt{command-enabled} turns one on or off.
+\texttt{:top-level} names the function that runs the command loop.
+\texttt{:pane} supplies one pane.  \texttt{:panes} and \texttt{:layouts}
+supply named panes and more than one arrangement.
 
 A 3D pane is a native OpenGL child window, a sibling of the native controls.
 Pointer events at its edge become a ray.  A hit returns a Lisp object and

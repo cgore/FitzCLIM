@@ -846,10 +846,11 @@ divider has no id.  A submenu is a popup menu."
     ids))
 
 (defun install-frame-menu (frame)
-  "Give FRAME a menu bar from its command table.
+  "Give FRAME a menu bar from the table its :MENU-BAR option chose.
 Commands with a menu string are items.  An explicit submenu is a
-popup.  A frame with no items keeps no menu."
-  (let ((items (command-menu-items (frame-command-table frame))))
+popup.  A frame with no menu bar, or with no items, keeps no menu."
+  (let* ((table (frame-menu-table frame))
+         (items (when table (command-menu-items table))))
     (when items
       (let ((menu (create-menu)))
         (unless (plusp (sb-sys:sap-int menu))
@@ -2697,8 +2698,27 @@ added.  Returns NIL when the file cannot be loaded."
   "Return the frame total.  This command is not on the menu."
   (menu-total *application-frame*))
 
+(define-application-frame windows-no-menu-frame ()
+  ()
+  (:menu-bar nil)
+  (:panes
+   (banner :label :label "Quiet" :width 40 :height 16))
+  (:layouts
+   (default (vertically () banner)))
+  (:geometry 40 20))
+
 (behavior 'windows-command-menu
   (setf *window-proc-error* nil)
+  (let ((manager (make-windows-frame-manager))
+        (quiet (make-application-frame 'windows-no-menu-frame)))
+    (unwind-protect
+         (progn
+           (adopt-frame manager quiet)
+           (should-be-null (frame-menu-table quiet))
+           (should-be-null (gethash quiet *frame-menu-ids*))
+           (disown-frame manager quiet))
+      (when (member quiet (frame-manager-frames manager) :test #'eq)
+        (disown-frame manager quiet))))
   (let ((manager (make-windows-frame-manager))
         (frame (make-application-frame 'windows-menu-frame)))
     (unwind-protect

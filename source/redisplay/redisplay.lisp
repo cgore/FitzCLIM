@@ -233,6 +233,8 @@ FORCE-P is accepted.  A pane with no display function is left alone."
        root)))
   frame)
 
+(setf fitzclim/frame:*frame-redisplayer* #'redisplay-frame-panes)
+
 (defun redisplay (stream generator)
   "Run GENERATOR again to rebuild STREAM's output history.
 The cursor returns to the left margin first.  updating-output keeps a

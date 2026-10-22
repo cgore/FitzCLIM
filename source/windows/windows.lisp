@@ -1804,7 +1804,7 @@ NIL is 0."
     (when (and root hwnd (not (eq sheet root)))
       (multiple-value-bind (x y) (sheet-in-root sheet root)
         (multiple-value-bind (width height) (sheet-pixel-size sheet)
-          (move-window (hwnd-sap hwnd) x y width height 0))))))
+          (move-window (hwnd-sap hwnd) x y width height 1))))))
 
 (defun resize-root (sheet width height)
   "Give the top-level window of SHEET a new client size, keeping its origin."

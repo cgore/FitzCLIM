@@ -332,6 +332,11 @@ so a Lisp range is scaled onto 0 through 1000.")
   (hwnd system-area-pointer)
   (rect system-area-pointer)
   (erase (signed 32)))
+(define-alien-routine ("RedrawWindow" redraw-window) (signed 32)
+  (hwnd system-area-pointer)
+  (rect system-area-pointer)
+  (region system-area-pointer)
+  (flags (unsigned 32)))
 (define-alien-routine ("GetDC" get-dc) system-area-pointer
   (hwnd system-area-pointer))
 (define-alien-routine ("ReleaseDC" release-dc) (signed 32)
@@ -1039,7 +1044,9 @@ whose opacity is below one half is skipped."
   "Ask Windows to paint SHEET again."
   (let ((hwnd (and sheet (sheet-mirror sheet))))
     (when hwnd
-      (invalidate-rect (hwnd-sap hwnd) (sb-sys:int-sap 0) 1))))
+      (invalidate-rect (hwnd-sap hwnd) (sb-sys:int-sap 0) 1)
+         (redraw-window (hwnd-sap hwnd) (sb-sys:int-sap 0) (sb-sys:int-sap 0)
+                        (logior 1 4 256)))))
 
 (defun call-with-ink (hdc color function)
   "Call FUNCTION with a COLORREF.  Flipping ink reverses the pixels."
@@ -1644,7 +1651,10 @@ DRAWER is called with the device context and a COLORREF."
        (when frame
          (layout-frame frame
                        :width (loword lparam)
-                       :height (hiword lparam))))
+                       :height (hiword lparam))
+         (invalidate-rect (hwnd-sap hwnd) (sb-sys:int-sap 0) 1)
+         (redraw-window (hwnd-sap hwnd) (sb-sys:int-sap 0) (sb-sys:int-sap 0)
+                        (logior 1 4 256))))
      (values t 0))
     ((= message +wm-erasebkgnd+)
      (let ((frame (mirror-frame hwnd)))

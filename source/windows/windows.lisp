@@ -115,6 +115,7 @@
 (defparameter +wm-char+ #x0102)
 (defparameter +wm-erasebkgnd+ #x0014)
 (defparameter +wm-ctlcolorstatic+ #x0138)
+(defparameter +wm-drawitem+ #x002B)
 (defparameter +wm-command+ #x0111)
 (defparameter +mf-string+ #x0000)
 (defparameter +mf-popup+ #x0010)
@@ -609,9 +610,14 @@ unless the string must outlive the call."
     (t nil)))
 
 (defun button-style (sheet)
-  "Return the button style bits of SHEET."
+  "Return the button style bits of SHEET.
+A push button with no label is owner-drawn, so its color is the
+button itself rather than a system button face."
   (typecase sheet
-    (push-button +ws-tabstop+)
+    (push-button (logior +ws-tabstop+
+                         (if (string= (or (gadget-label sheet) "") "")
+                             #x000B
+                             0)))
     (toggle-button
      (let ((parent (sheet-parent sheet)))
        (logior +ws-tabstop+
@@ -1660,9 +1666,28 @@ of the square.  The native button face is covered."
           (delete-dc memory)
           (release-dc (sb-sys:int-sap 0) screen))))))
 
+(defun draw-owner-button (lparam)
+  "Fill an owner-drawn button from the DRAWITEMSTRUCT at LPARAM.
+The button's background is the fill.  A button without one stays a
+system button."
+  (when (plusp lparam)
+    (let* ((sap (sb-sys:int-sap lparam))
+           (sheet (mirror-sheet (sb-sys:sap-ref-word sap 16))))
+      (when (and (typep sheet 'push-button) (gadget-background sheet))
+        (fill-color-rect (sb-sys:int-sap (sb-sys:sap-ref-word sap 32))
+                         (gadget-background sheet)
+                         (sb-sys:signed-sap-ref-32 sap 40)
+                         (sb-sys:signed-sap-ref-32 sap 44)
+                         (sb-sys:signed-sap-ref-32 sap 48)
+                         (sb-sys:signed-sap-ref-32 sap 52)))))
+  t)
+
 (defun handle-message (hwnd message wparam lparam)
   "Handle one message for HWND.  Return a result when this port handles it."
   (cond
+    ((= message +wm-drawitem+)
+     (draw-owner-button lparam)
+     (values t 1))
     ((= message +wm-size+)
      (let ((frame (mirror-frame hwnd)))
        (when frame

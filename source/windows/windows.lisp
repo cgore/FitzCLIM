@@ -258,6 +258,9 @@ so a Lisp range is scaled onto 0 through 1000.")
   (hwnd system-area-pointer)
   (index (signed 32))
   (new-long (signed 64)))
+(define-alien-routine ("GetWindowLongPtrW" get-window-long-ptr-w) (signed 64)
+  (hwnd system-area-pointer)
+  (index (signed 32)))
 (define-alien-routine ("AdjustWindowRectEx" adjust-window-rect-ex) (signed 32)
   (rect (* win-rect))
   (style (unsigned 32))
@@ -591,14 +594,20 @@ unless the string must outlive the call."
                        (:scrollbar "SCROLLBAR")
                        (:frame "FitzCLIMFrame")
                        (:pane "FitzCLIMPane")
-                       (:opengl "FitzCLIMOpenGL")))))
+                       (:opengl "FitzCLIMOpenGL")
+                       (:light "FitzCLIMLight")))))
          (push (cons kind alien) *control-classes*)
          alien))))
 
 (defun mirror-kind (sheet)
-  "Return the native window kind of SHEET, or NIL when it stays a layout."
+  "Return the native window kind of SHEET, or NIL when it stays a layout.
+A push button with no label is a FitzCLIM light.  The system BUTTON
+class sends owner-draw to its own procedure, so a light needs a class
+whose procedure is FitzCLIM."
   (typecase sheet
-    (push-button :button)
+    (push-button (if (string= (or (gadget-label sheet) "") "")
+                     :light
+                     :button))
     (toggle-button :button)
     (label-pane :static)
     (text-field :edit)
@@ -616,7 +625,7 @@ button itself rather than a system button face."
   (typecase sheet
     (push-button (logior +ws-tabstop+
                          (if (string= (or (gadget-label sheet) "") "")
-                             #x000B
+                             #x0B00
                              0)))
     (toggle-button
      (let ((parent (sheet-parent sheet)))
@@ -1669,25 +1678,42 @@ of the square.  The native button face is covered."
 (defun draw-owner-button (lparam)
   "Fill an owner-drawn button from the DRAWITEMSTRUCT at LPARAM.
 The button's background is the fill.  A button without one stays a
-system button."
+system button.  The struct is 8-byte aligned: CtlType and CtlID take
+the first eight bytes, and each pointer takes eight."
   (when (plusp lparam)
     (let* ((sap (sb-sys:int-sap lparam))
-           (sheet (mirror-sheet (sb-sys:sap-ref-word sap 16))))
+           (sheet (mirror-sheet (sb-sys:sap-ref-word sap 24))))
       (when (and (typep sheet 'push-button) (gadget-background sheet))
-        (fill-color-rect (sb-sys:int-sap (sb-sys:sap-ref-word sap 32))
+        (fill-color-rect (sb-sys:int-sap (sb-sys:sap-ref-word sap 40))
                          (gadget-background sheet)
-                         (sb-sys:signed-sap-ref-32 sap 40)
-                         (sb-sys:signed-sap-ref-32 sap 44)
                          (sb-sys:signed-sap-ref-32 sap 48)
-                         (sb-sys:signed-sap-ref-32 sap 52)))))
+                         (sb-sys:signed-sap-ref-32 sap 52)
+                         (sb-sys:signed-sap-ref-32 sap 56)
+                         (sb-sys:signed-sap-ref-32 sap 60)))))
   t)
+
+(defun paint-light (hwnd sheet)
+  "Fill the light SHEET in its own window."
+  (let* ((paint (make-alien (unsigned 8) 128))
+         (sap (alien-sap paint)))
+    (unwind-protect
+        (let ((hdc (begin-paint (hwnd-sap hwnd) sap)))
+          (unwind-protect
+              (when (plusp (sb-sys:sap-int hdc))
+                (multiple-value-bind (width height) (sheet-pixel-size sheet)
+                  (fill-color-rect hdc (gadget-background sheet)
+                                   0 0 width height)))
+            (end-paint (hwnd-sap hwnd) sap)))
+      (free-alien paint))))
 
 (defun handle-message (hwnd message wparam lparam)
   "Handle one message for HWND.  Return a result when this port handles it."
   (cond
-    ((= message +wm-drawitem+)
-     (draw-owner-button lparam)
-     (values t 1))
+    ((= message +wm-paint+)
+     (let ((sheet (mirror-sheet hwnd)))
+       (when (and (typep sheet 'push-button) (gadget-background sheet))
+         (paint-light hwnd sheet)))
+     (values t 0))
     ((= message +wm-size+)
      (let ((frame (mirror-frame hwnd)))
        (when frame
@@ -1835,6 +1861,7 @@ NIL is 0."
       (error "WNDCLASSEXW is ~D bytes, not 80."
              (alien-size wndclassexw :bytes)))
     (register-window-class :frame 16)
+    (register-window-class :light 16)
     (register-window-class :pane 6)
     (register-window-class :opengl 0 +cs-owndc+)
     (setf *windows-classes-ready* t)))
@@ -2245,8 +2272,16 @@ visible window, so an unshown frame does not block the command loop."
     (set-window-theme (hwnd-sap hwnd) (alien-sap empty) (alien-sap empty))))
 
 (defun note-control-color (gadget)
-  "Ask GADGET to paint again when it has a window."
+  "Ask GADGET to paint again when it has a window.
+A blank button becomes owner-drawn here.  Its window was created before
+its color was known, so the creation style could not say so."
   (when (sheet-mirror gadget)
+    (when (and (typep gadget 'push-button)
+               (string= (or (gadget-label gadget) "") "")
+               (gadget-background gadget))
+      (set-window-long-ptr-w (hwnd-sap (sheet-mirror gadget))
+                             +gwl-style+
+                             (logior (control-style gadget) #x0B00)))
     (when (or (gadget-foreground gadget) (gadget-background gadget))
       (disable-window-theme (sheet-mirror gadget)))
     (invalidate-rect (hwnd-sap (sheet-mirror gadget)) (sb-sys:int-sap 0) 1)))

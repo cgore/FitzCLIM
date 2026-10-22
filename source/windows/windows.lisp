@@ -1582,6 +1582,21 @@ DRAWER is called with the device context and a COLORREF."
       (when background
         (sb-sys:sap-int (color-brush background))))))
 
+(defun draw-frame-lights (frame hdc top)
+  "Fill each square cockpit light of FRAME.
+A push button with no label is a light.  Its background is the color
+of the square.  The native button face is covered."
+  (map-over-sheets
+   (lambda (sheet)
+     (when (and (typep sheet 'push-button)
+                (string= (or (gadget-label sheet) "") "")
+                (gadget-background sheet))
+       (multiple-value-bind (x y) (sheet-in-root sheet top)
+         (multiple-value-bind (width height) (sheet-pixel-size sheet)
+           (fill-color-rect hdc (gadget-background sheet)
+                            x y (+ x width) (+ y height))))))
+   top))
+
 (defun draw-frame-client (frame hdc)
   "Fill FRAME's background and stroke the borders of its outlining panes."
   (let ((top (frame-top-level-sheet frame)))
@@ -1597,7 +1612,9 @@ DRAWER is called with the device context and a COLORREF."
                (stroke-color-rect hdc (outlining-ink sheet)
                                   (+ x 1) (+ y 1)
                                   (+ x width -1) (+ y height -1))))))
-       top))))
+       top)
+    (when top
+      (draw-frame-lights frame hdc top)))))
 
 (defun frame-client-painted? (frame)
   "Return true when FRAME paints its own background or a border."

@@ -107,6 +107,7 @@
 (defparameter +swp-showwindow+ #x0040)
 (defparameter +swp-hidewindow+ #x0080)
 (defparameter +spi-getworkarea+ #x0030)
+(defparameter +wm-size+ #x0005)
 (defparameter +wm-close+ #x0010)
 (defparameter +wm-paint+ #x000F)
 (defparameter +wm-keydown+ #x0100)
@@ -298,6 +299,9 @@ so a Lisp range is scaled onto 0 through 1000.")
 (define-alien-routine ("GetParent" get-parent) system-area-pointer
   (hwnd system-area-pointer))
 (define-alien-routine ("GetWindowRect" get-window-rect) (signed 32)
+  (hwnd system-area-pointer)
+  (rect (* win-rect)))
+(define-alien-routine ("GetClientRect" get-client-rect) (signed 32)
   (hwnd system-area-pointer)
   (rect (* win-rect)))
 (define-alien-routine ("BeginPaint" begin-paint) system-area-pointer
@@ -1635,6 +1639,13 @@ DRAWER is called with the device context and a COLORREF."
 (defun handle-message (hwnd message wparam lparam)
   "Handle one message for HWND.  Return a result when this port handles it."
   (cond
+    ((= message +wm-size+)
+     (let ((frame (mirror-frame hwnd)))
+       (when frame
+         (layout-frame frame
+                       :width (loword lparam)
+                       :height (hiword lparam))))
+     (values t 0))
     ((= message +wm-erasebkgnd+)
      (let ((frame (mirror-frame hwnd)))
        (when (and frame (frame-background frame) (plusp wparam))
@@ -1793,10 +1804,8 @@ NIL is 0."
                     (logior 2 4 16))))
 
 (defmethod allocate-space :after ((pane sheet) width height)
-  (when (sheet-mirror pane)
-    (if (null (sheet-parent pane))
-        (resize-root pane width height)
-        (place-mirror pane))))
+  (when (and (sheet-mirror pane) (sheet-parent pane))
+    (place-mirror pane)))
 
 (defun realize-sheet (sheet root)
   "Create SHEET's native window when it is a control or an application pane."
@@ -2513,6 +2522,12 @@ added.  Returns NIL when the file cannot be loaded."
            (adopt-frame manager frame)
            (let ((canvas (find-pane-named frame 'canvas))
                  (port (frame-manager-port manager)))
+             (send-message (sheet-mirror (frame-top-level-sheet frame)) +wm-size+
+                           0 (logior 90 (ash 70 16)))
+             (should= 90 (frame-width frame))
+             (should= 70 (frame-height frame))
+             (should= 90 (bounding-rectangle-width
+                          (sheet-region (frame-top-level-sheet frame))))
              (send-message (sheet-mirror canvas) +wm-lbuttondown+
                            0 (logior 3 (ash 4 16)))
              (let ((event (port-next-event port)))

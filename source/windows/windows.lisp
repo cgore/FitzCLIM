@@ -595,7 +595,8 @@ unless the string must outlive the call."
                        (:frame "FitzCLIMFrame")
                        (:pane "FitzCLIMPane")
                        (:opengl "FitzCLIMOpenGL")
-                       (:light "FitzCLIMLight")))))
+                       (:light "FitzCLIMLight")
+                       (:command "FitzCLIMCommand")))))
          (push (cons kind alien) *control-classes*)
          alien))))
 
@@ -607,7 +608,7 @@ whose procedure is FitzCLIM."
   (typecase sheet
     (push-button (if (string= (or (gadget-label sheet) "") "")
                      :light
-                     :button))
+                     :command))
     (toggle-button :button)
     (label-pane :static)
     (text-field :edit)
@@ -1508,7 +1509,11 @@ DRAWER is called with the device context and a COLORREF."
           ((= message +wm-mousemove+)
            (enqueue-pointer sheet 'pointer-motion-event x y modifiers))
           ((= message +wm-lbuttondown+)
-           (enqueue-pointer sheet 'pointer-button-press-event x y modifiers :left))
+           (if (and (typep sheet 'push-button)
+                    (plusp (length (or (gadget-label sheet) ""))))
+               (run-gadget-callback sheet)
+               (enqueue-pointer sheet 'pointer-button-press-event
+                                x y modifiers :left)))
           ((= message +wm-lbuttonup+)
            (enqueue-pointer sheet 'pointer-button-release-event x y modifiers :left))
           ((= message +wm-rbuttondown+)
@@ -1692,8 +1697,8 @@ the first eight bytes, and each pointer takes eight."
                          (sb-sys:signed-sap-ref-32 sap 60)))))
   t)
 
-(defun paint-light (hwnd sheet)
-  "Fill the light SHEET in its own window."
+(defun paint-owned-button (hwnd sheet)
+  "Fill SHEET and draw its label in SHEET's colors."
   (let* ((paint (make-alien (unsigned 8) 128))
          (sap (alien-sap paint)))
     (unwind-protect
@@ -1701,8 +1706,17 @@ the first eight bytes, and each pointer takes eight."
           (unwind-protect
               (when (plusp (sb-sys:sap-int hdc))
                 (multiple-value-bind (width height) (sheet-pixel-size sheet)
-                  (fill-color-rect hdc (gadget-background sheet)
-                                   0 0 width height)))
+                  (fill-color-rect hdc (or (gadget-background sheet) +black+)
+                                   0 0 width height)
+                  (let ((label (gadget-label sheet)))
+                    (when (and label (plusp (length label)))
+                      (with-utf16 (text label)
+                        (set-bk-mode hdc +transparent+)
+                        (when (gadget-foreground sheet)
+                          (set-text-color hdc (color-colorref
+                                               (gadget-foreground sheet))))
+                        (text-out-w hdc 8 (max 0 (floor (- height 16) 2))
+                                    (alien-sap text) (length label)))))))
             (end-paint (hwnd-sap hwnd) sap)))
       (free-alien paint))))
 
@@ -1711,8 +1725,8 @@ the first eight bytes, and each pointer takes eight."
   (cond
     ((= message +wm-paint+)
      (let ((sheet (mirror-sheet hwnd)))
-       (when (and (typep sheet 'push-button) (gadget-background sheet))
-         (paint-light hwnd sheet)
+       (when (typep sheet 'push-button)
+         (paint-owned-button hwnd sheet)
          (values t 0))))
     ((= message +wm-size+)
      (let ((frame (mirror-frame hwnd)))
@@ -1726,12 +1740,10 @@ the first eight bytes, and each pointer takes eight."
      (values t 0))
     ((= message +wm-erasebkgnd+)
      (let ((sheet (mirror-sheet hwnd)))
-       (when (and (typep sheet 'push-button)
-                  (gadget-background sheet)
-                  (plusp wparam))
+       (when (and (typep sheet 'push-button) (plusp wparam))
          (multiple-value-bind (width height) (sheet-pixel-size sheet)
            (fill-color-rect (sb-sys:int-sap wparam)
-                            (gadget-background sheet)
+                            (or (gadget-background sheet) +black+)
                             0 0 width height))
          (return-from handle-message (values t 1)))))
     ((= message +wm-erasebkgnd+)
@@ -1871,7 +1883,8 @@ NIL is 0."
       (error "WNDCLASSEXW is ~D bytes, not 80."
              (alien-size wndclassexw :bytes)))
     (register-window-class :frame 16)
-    (register-window-class :light 16)
+    (register-window-class :light 1)
+    (register-window-class :command 1)
     (register-window-class :pane 6)
     (register-window-class :opengl 0 +cs-owndc+)
     (setf *windows-classes-ready* t)))
@@ -2542,10 +2555,10 @@ added.  Returns NIL when the file cannot be loaded."
                      (declare (ignore gadget))
                      (setf clicked t)))
              (deactivate-gadget go)
-             (send-message (sheet-mirror go) +bm-click+ 0 0)
+             (send-message (sheet-mirror go) +wm-lbuttondown+ 0 0)
              (should-be-null clicked)
              (activate-gadget go)
-             (send-message (sheet-mirror go) +bm-click+ 0 0)
+             (send-message (sheet-mirror go) +wm-lbuttondown+ 0 0)
              (should-be-true clicked)
              (send-message (sheet-mirror top) +wm-hscroll+
                            (logior +sb-thumbposition+ (ash 200 16))

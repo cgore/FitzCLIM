@@ -32,7 +32,8 @@
 #### ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 #### POSSIBILITY OF SUCH DAMAGE.
 
-LATEX_FILES=fitzclim.latex copyright.latex introduction.latex
+LATEX_FILES=fitzclim.latex copyright.latex introduction.latex \
+            geometry-package.latex
 
 all: fitzclim.dvi fitzclim.ps fitzclim.pdf
 

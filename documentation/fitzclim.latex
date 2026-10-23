@@ -120,6 +120,8 @@
 
 \mainmatter
 
+\input{geometry-package.latex}
+
 \backmatter
 
 \bibliography{fitzclim}

@@ -1,0 +1,732 @@
+%%%% Copyright (C) 2026, Christopher Mark Gore,
+%%%% Soli Deo Gloria,
+%%%% All rights reserved.
+%%%%
+%%%% 22 Forest Glade Court, Saint Charles, Missouri 63304 USA.
+%%%% Web: http://cgore.com
+%%%% Email: cgore@cgore.com
+%%%%
+%%%% Redistribution and use in source and binary forms, with or without
+%%%% modification, are permitted provided that the following conditions are met:
+%%%%
+%%%%     * Redistributions of source code must retain the above copyright
+%%%%       notice, this list of conditions and the following disclaimer.
+%%%%
+%%%%     * Redistributions in binary form must reproduce the above copyright
+%%%%       notice, this list of conditions and the following disclaimer in the
+%%%%       documentation and/or other materials provided with the distribution.
+%%%%
+%%%%     * Neither the name of Christopher Mark Gore nor the names of other
+%%%%       contributors may be used to endorse or promote products derived from
+%%%%       this software without specific prior written permission.
+%%%%
+%%%% THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+%%%% AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+%%%% IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+%%%% ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+%%%% LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+%%%% CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+%%%% SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+%%%% INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+%%%% CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+%%%% ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+%%%% POSSIBILITY OF SUCH DAMAGE.
+
+\lispPackageChapter{FitzCLIM/geometry}
+
+The \texttt{FitzCLIM/geometry} package is the geometry protocol.  It
+provides points, rectangles, polygons, affine transformations, and the
+region operations on them: containment, union, intersection, difference,
+equality, and bounding rectangles.  The protocol stays two-dimensional.
+Regions, transforms, and clipping are a plane, and they stay out of the
+scene graph of the 3D pane.
+
+\section{Variables}
+
+\lispVariableSubsection{+nowhere+}
+
+The \texttt{+nowhere+} variable holds the empty region, an instance of the
+\texttt{nowhere} class.  It contains no positions.
+
+\lispVariableSubsection{+everywhere+}
+
+The \texttt{+everywhere+} variable holds the region that contains every
+position, an instance of the \texttt{everywhere} class.
+
+\lispVariableSubsection{+identity-transformation+}
+
+The \texttt{+identity-transformation+} variable holds the transformation
+that leaves every position where it is.
+
+\section{Functions}
+
+\lispFunctionSubsection{regionp}
+
+The \texttt{regionp} function returns true if \texttt{object} is a region.
+Points, rectangles, polygons, and region sets are regions.
+
+\lispFunctionSubsection{nowhere-p}
+
+The \texttt{nowhere-p} function returns true if \texttt{object} is the
+empty region.
+
+\lispFunctionSubsection{everywhere-p}
+
+The \texttt{everywhere-p} function returns true if \texttt{object} is the
+whole plane.
+
+\lispFunctionSubsection{region-set-p}
+
+The \texttt{region-set-p} function returns true if \texttt{object} is a
+region set.
+
+\lispFunctionSubsection{pointp}
+
+The \texttt{pointp} function returns true if \texttt{object} is a point.
+
+\lispFunctionSubsection{make-point}
+
+The \texttt{make-point} function returns a point at the coordinates
+\texttt{x} and \texttt{y}, which must be real.
+
+\lispSyntax
+
+\texttt{(make-point \lispVar{x} \lispVar{y})}
+
+\lispExamples
+
+\begin{lstlisting}
+(let ((point (make-point 3 4)))
+  (pointp point)   ; Returns T
+  (point-x point)  ; Returns 3
+  (point-y point)) ; Returns 4
+\end{lstlisting}
+
+\lispFunctionSubsection{point-x}
+
+The \texttt{point-x} function returns the $x$ coordinate of \texttt{point}.
+
+\lispFunctionSubsection{point-y}
+
+The \texttt{point-y} function returns the $y$ coordinate of \texttt{point}.
+
+\lispFunctionSubsection{point-position}
+
+The \texttt{point-position} function returns the $x$ and $y$ coordinates
+of \texttt{point} as two values.
+
+\lispFunctionSubsection{rectanglep}
+
+The \texttt{rectanglep} function returns true if \texttt{object} is a
+rectangle.
+
+\lispFunctionSubsection{make-rectangle}
+
+The \texttt{make-rectangle} function returns the axis-aligned rectangle
+with opposite corners \texttt{point-1} and \texttt{point-2}.
+
+\lispSyntax
+
+\texttt{(make-rectangle \lispVar{point-1} \lispVar{point-2})}
+
+\lispFunctionSubsection{make-rectangle*}
+
+The \texttt{make-rectangle*} function returns the axis-aligned rectangle
+with corners \texttt{(x1, y1)} and \texttt{(x2, y2)}.  The corner order
+does not matter.
+
+\lispSyntax
+
+\texttt{(make-rectangle* \lispVar{x1} \lispVar{y1} \lispVar{x2} \lispVar{y2})}
+
+\lispExamples
+
+\begin{lstlisting}
+(let ((rectangle (make-rectangle* 4 1 0 3)))
+  (rectangle-min-x rectangle)   ; Returns 0
+  (rectangle-min-y rectangle)   ; Returns 1
+  (rectangle-max-x rectangle)   ; Returns 4
+  (rectangle-max-y rectangle)   ; Returns 3
+  (rectangle-width rectangle)   ; Returns 4
+  (rectangle-height rectangle)) ; Returns 2
+\end{lstlisting}
+
+\lispFunctionSubsection{rectangle-min-x}
+
+The \texttt{rectangle-min-x} function returns the left edge of
+\texttt{rectangle}.
+
+\lispFunctionSubsection{rectangle-min-y}
+
+The \texttt{rectangle-min-y} function returns the top edge of
+\texttt{rectangle}.
+
+\lispFunctionSubsection{rectangle-max-x}
+
+The \texttt{rectangle-max-x} function returns the right edge of
+\texttt{rectangle}.
+
+\lispFunctionSubsection{rectangle-max-y}
+
+The \texttt{rectangle-max-y} function returns the bottom edge of
+\texttt{rectangle}.
+
+\lispFunctionSubsection{rectangle-edges*}
+
+The \texttt{rectangle-edges*} function returns the left, top, right, and
+bottom edges of \texttt{rectangle} as four values.
+
+\lispFunctionSubsection{rectangle-width}
+
+The \texttt{rectangle-width} function returns the width of
+\texttt{rectangle}.
+
+\lispFunctionSubsection{rectangle-height}
+
+The \texttt{rectangle-height} function returns the height of
+\texttt{rectangle}.
+
+\lispFunctionSubsection{rectangle-size}
+
+The \texttt{rectangle-size} function returns the width and height of
+\texttt{rectangle} as two values.
+
+\lispFunctionSubsection{rectangle-intersection-or-nil}
+
+The \texttt{rectangle-intersection-or-nil} function returns the
+intersection of the two rectangles, or \texttt{nil} when they miss.
+Touching at an edge or a corner counts as an intersection.
+
+\lispSyntax
+
+\texttt{(rectangle-intersection-or-nil \lispVar{rectangle-1}
+  \lispVar{rectangle-2})}
+
+\lispExamples
+
+\begin{lstlisting}
+(let ((one (make-rectangle* 0 0 4 4))
+      (two (make-rectangle* 2 2 6 6)))
+  (rectangle-equal (rectangle-intersection-or-nil one two)
+                   (make-rectangle* 2 2 4 4))) ; Returns T
+\end{lstlisting}
+
+\lispFunctionSubsection{rectangle-difference-list}
+
+The \texttt{rectangle-difference-list} function returns the parts of
+\texttt{rectangle-1} that lie outside \texttt{rectangle-2}, as a list of
+rectangles.  An empty list means \texttt{rectangle-2} covers
+\texttt{rectangle-1}.  When the two rectangles miss, the list holds
+\texttt{rectangle-1} itself.
+
+\lispSyntax
+
+\texttt{(rectangle-difference-list \lispVar{rectangle-1}
+  \lispVar{rectangle-2})}
+
+\lispExamples
+
+\begin{lstlisting}
+(let* ((whole (make-rectangle* 0 0 10 10))
+       (hole (make-rectangle* 2 2 8 8))
+       (pieces (rectangle-difference-list whole hole)))
+  (length pieces))              ; Returns 4
+(rectangle-difference-list hole whole) ; Returns NIL
+\end{lstlisting}
+
+\lispFunctionSubsection{rectangles-touch-horizontally-p}
+
+The \texttt{rectangles-touch-horizontally-p} function returns true when
+the two rectangles share a vertical edge and the same vertical span, so
+their union is one rectangle.
+
+\lispFunctionSubsection{rectangles-touch-vertically-p}
+
+The \texttt{rectangles-touch-vertically-p} function returns true when the
+two rectangles share a horizontal edge and the same horizontal span, so
+their union is one rectangle.
+
+\lispFunctionSubsection{join-two-rectangles}
+
+The \texttt{join-two-rectangles} function returns one rectangle covering
+both arguments.  The caller has already decided that the union is itself
+a rectangle.
+
+\lispFunctionSubsection{polygonp}
+
+The \texttt{polygonp} function returns true if \texttt{object} is a
+polygon.
+
+\lispFunctionSubsection{make-polygon}
+
+The \texttt{make-polygon} function returns a polygon through \texttt{points},
+which must hold at least three points.  The \texttt{:convex-p} keyword
+marks the polygon convex; containment of another region then tests the
+corners only.
+
+\lispSyntax
+
+\texttt{(make-polygon \lispVar{points} \&key \lispVar{convex-p})}
+
+\lispExamples
+
+\begin{lstlisting}
+(let ((square (make-polygon* 0 0 4 0 4 3 0 3)))
+  (polygonp square)                    ; Returns T
+  (length (polygon-points square))     ; Returns 4
+  (region-contains-position-p square 1 1)   ; Returns T
+  (region-contains-position-p square 0 0)   ; Returns T
+  (region-contains-position-p square 4 3)   ; Returns T
+  (region-contains-position-p square 5 1))  ; Returns NIL
+\end{lstlisting}
+
+\lispFunctionSubsection{make-polygon*}
+
+The \texttt{make-polygon*} function returns a polygon from the flat
+coordinate list \texttt{coordinates}, which must pair $x$ and $y$.
+
+\lispSyntax
+
+\texttt{(make-polygon* \&rest \lispVar{coordinates})}
+
+\lispFunctionSubsection{polygon-points}
+
+The \texttt{polygon-points} function returns the vertices of
+\texttt{polygon}, in order.  The first vertex is not repeated at the end.
+
+\lispFunctionSubsection{polygon-convex-p}
+
+The \texttt{polygon-convex-p} function returns true when \texttt{polygon}
+is marked convex.
+
+\lispFunctionSubsection{map-polygon-edges}
+
+The \texttt{map-polygon-edges} function calls \texttt{function} on each
+edge of \texttt{polygon} as four coordinates, \texttt{x1 y1 x2 y2}.  The
+last edge closes back to the first vertex.
+
+\lispSyntax
+
+\texttt{(map-polygon-edges \lispVar{polygon} \lispVar{function})}
+
+\lispFunctionSubsection{transformationp}
+
+The \texttt{transformationp} function returns true if \texttt{object} is
+a transformation.
+
+\lispFunctionSubsection{make-transformation}
+
+The \texttt{make-transformation} function returns the affine
+transformation with the given matrix and translation.  It maps a
+position by $x' = \texttt{mxx} \, x + \texttt{mxy} \, y +
+\texttt{tx}$ and $y' = \texttt{myx} \, x + \texttt{myy} \, y +
+\texttt{ty}$.
+
+\lispSyntax
+
+\texttt{(make-transformation \lispVar{mxx} \lispVar{mxy} \lispVar{myx}
+  \lispVar{myy} \lispVar{tx} \lispVar{ty})}
+
+\lispFunctionSubsection{make-translation-transformation}
+
+The \texttt{make-translation-transformation} function returns a
+transformation that adds \texttt{dx} and \texttt{dy} to a position.
+
+\lispSyntax
+
+\texttt{(make-translation-transformation \lispVar{dx} \lispVar{dy})}
+
+\lispExamples
+
+\begin{lstlisting}
+(multiple-value-bind (x y)
+    (transform-position (make-translation-transformation 10 -2) 1 1)
+  (list x y)) ; Returns (11 -1)
+\end{lstlisting}
+
+\lispFunctionSubsection{make-scaling-transformation}
+
+The \texttt{make-scaling-transformation} function returns a
+transformation that scales by \texttt{sx} and \texttt{sy} about
+\texttt{origin}, which defaults to \texttt{(0, 0)}.
+
+\lispSyntax
+
+\texttt{(make-scaling-transformation \lispVar{sx} \lispVar{sy}
+  \&optional \lispVar{origin})}
+
+\lispExamples
+
+\begin{lstlisting}
+(multiple-value-bind (x y)
+    (transform-position (make-scaling-transformation 2 3) 4 5)
+  (list x y)) ; Returns (8 15)
+\end{lstlisting}
+
+\lispFunctionSubsection{make-rotation-transformation}
+
+The \texttt{make-rotation-transformation} function returns a
+transformation that rotates counterclockwise by \texttt{angle} radians
+about \texttt{origin}, which defaults to \texttt{(0, 0)}.
+
+\lispSyntax
+
+\texttt{(make-rotation-transformation \lispVar{angle}
+  \&optional \lispVar{origin})}
+
+\lispFunctionSubsection{compose-transformations}
+
+The \texttt{compose-transformations} function returns the
+transformation that applies \texttt{transformation-2} first and
+\texttt{transformation-1} second.
+
+\lispSyntax
+
+\texttt{(compose-transformations \lispVar{transformation-1}
+  \lispVar{transformation-2})}
+
+\lispFunctionSubsection{invert-transformation}
+
+The \texttt{invert-transformation} function returns the inverse of
+\texttt{transformation}.  It signals \texttt{SINGULAR-TRANSFORMATION}
+when the transformation has no inverse.
+
+\lispFunctionSubsection{transform-position}
+
+The \texttt{transform-position} function returns the image of
+\texttt{(x, y)} under \texttt{transformation}, as two values.
+
+\lispSyntax
+
+\texttt{(transform-position \lispVar{transformation} \lispVar{x}
+  \lispVar{y})}
+
+\lispExamples
+
+\begin{lstlisting}
+(multiple-value-bind (x y) (transform-position +identity-transformation+ 3 4)
+  (list x y)) ; Returns (3 4)
+\end{lstlisting}
+
+\lispFunctionSubsection{untransform-position}
+
+The \texttt{untransform-position} function returns the position that
+\texttt{transformation} maps to \texttt{(x, y)}.
+
+\lispSyntax
+
+\texttt{(untransform-position \lispVar{transformation} \lispVar{x}
+  \lispVar{y})}
+
+\lispExamples
+
+\begin{lstlisting}
+(multiple-value-bind (x y)
+    (untransform-position (make-translation-transformation 5 7) 8 9)
+  (list x y)) ; Returns (3 2)
+\end{lstlisting}
+
+\lispFunctionSubsection{transformation-rectilinear-p}
+
+The \texttt{transformation-rectilinear-p} function returns true when
+\texttt{transformation} maps axis-aligned rectangles to axis-aligned
+rectangles.  A rotation of a quarter turn does; a shear does not.
+
+\lispExamples
+
+\begin{lstlisting}
+(transformation-rectilinear-p +identity-transformation+) ; Returns T
+(transformation-rectilinear-p (make-transformation 0 -1 1 0 0 0)) ; Returns T
+(transformation-rectilinear-p (make-transformation 1 -1 1 1 0 0)) ; Returns NIL
+\end{lstlisting}
+
+\lispFunctionSubsection{bounding-rectangle}
+
+The \texttt{bounding-rectangle} function returns the smallest
+axis-aligned rectangle that covers \texttt{region}.  The empty region
+and the whole plane have no such rectangle, and the function signals
+\texttt{BOUNDING-RECTANGLE-OF-NOWHERE} for them.
+
+\lispExamples
+
+\begin{lstlisting}
+(bounding-rectangle (make-polygon* 0 1 3 4 1 2))
+  ; Returns the rectangle from (0, 1) to (3, 4)
+\end{lstlisting}
+
+\lispFunctionSubsection{bounding-rectangle-min-x}
+
+The \texttt{bounding-rectangle-min-x} function returns the left edge of
+the bounding rectangle of \texttt{region}.
+
+\lispFunctionSubsection{bounding-rectangle-min-y}
+
+The \texttt{bounding-rectangle-min-y} function returns the top edge of
+the bounding rectangle of \texttt{region}.
+
+\lispFunctionSubsection{bounding-rectangle-max-x}
+
+The \texttt{bounding-rectangle-max-x} function returns the right edge of
+the bounding rectangle of \texttt{region}.
+
+\lispFunctionSubsection{bounding-rectangle-max-y}
+
+The \texttt{bounding-rectangle-max-y} function returns the bottom edge
+of the bounding rectangle of \texttt{region}.
+
+\lispFunctionSubsection{bounding-rectangle-width}
+
+The \texttt{bounding-rectangle-width} function returns the width of the
+bounding rectangle of \texttt{region}.
+
+\lispFunctionSubsection{bounding-rectangle-height}
+
+The \texttt{bounding-rectangle-height} function returns the height of
+the bounding rectangle of \texttt{region}.
+
+\lispFunctionSubsection{bounding-rectangle-size}
+
+The \texttt{bounding-rectangle-size} function returns the width and
+height of the bounding rectangle of \texttt{region} as two values.
+
+\section{Generics}
+
+\lispGenericSubsection{region-contains-position-p}
+
+The \texttt{region-contains-position-p} generic returns true when the
+position \texttt{(x, y)} lies in \texttt{region}.  Boundaries count as
+inside.
+
+\lispSyntax
+
+\texttt{(region-contains-position-p \lispVar{region} \lispVar{x}
+  \lispVar{y})}
+
+\lispExamples
+
+\begin{lstlisting}
+(region-contains-position-p (make-rectangle* 0 1 4 3) 0 1) ; Returns T
+(region-contains-position-p (make-rectangle* 0 1 4 3) 2 2) ; Returns T
+(region-contains-position-p (make-rectangle* 0 1 4 3) -1 2) ; Returns NIL
+\end{lstlisting}
+
+\lispGenericSubsection{region-contains-region-p}
+
+The \texttt{region-contains-region-p} generic returns true when every
+point of \texttt{region2} lies in \texttt{region1}.
+
+\lispSyntax
+
+\texttt{(region-contains-region-p \lispVar{region1} \lispVar{region2})}
+
+\lispExamples
+
+\begin{lstlisting}
+(region-contains-region-p +everywhere+ +nowhere+) ; Returns T
+(region-contains-region-p +nowhere+ +everywhere+) ; Returns NIL
+\end{lstlisting}
+
+\lispGenericSubsection{region-equal}
+
+The \texttt{region-equal} generic returns true when \texttt{region1} and
+\texttt{region2} contain the same points.
+
+\lispSyntax
+
+\texttt{(region-equal \lispVar{region1} \lispVar{region2})}
+
+\lispExamples
+
+\begin{lstlisting}
+(region-equal (make-point 3 4) (make-point 3 4)) ; Returns T
+(region-equal (make-point 3 4) (make-point 3 5)) ; Returns NIL
+\end{lstlisting}
+
+\lispGenericSubsection{region-intersects-region-p}
+
+The \texttt{region-intersects-region-p} generic returns true when
+\texttt{region1} and \texttt{region2} have at least one point in common.
+
+\lispSyntax
+
+\texttt{(region-intersects-region-p \lispVar{region1} \lispVar{region2})}
+
+\lispExamples
+
+\begin{lstlisting}
+(region-intersects-region-p (make-rectangle* 0 0 2 2)
+                            (make-rectangle* 2 0 5 2)) ; Returns T
+(region-intersects-region-p +everywhere+ +nowhere+) ; Returns NIL
+\end{lstlisting}
+
+\lispGenericSubsection{region-union}
+
+The \texttt{region-union} generic returns the region that contains a
+point exactly when \texttt{region} or one of \texttt{regions} contains
+it.  Rectangles whose union is a single rectangle are joined; points
+inside other members are dropped.
+
+\lispSyntax
+
+\texttt{(region-union \lispVar{region} \&rest \lispVar{regions})}
+
+\lispExamples
+
+\begin{lstlisting}
+(let ((left (make-rectangle* 0 0 2 2))
+      (right (make-rectangle* 2 0 5 2))
+      (joined (region-union left right)))
+  (list (rectanglep joined) (rectangle-width joined))) ; Returns (T 5)
+\end{lstlisting}
+
+\lispGenericSubsection{region-intersection}
+
+The \texttt{region-intersection} generic returns the region of points
+that lie in \texttt{region} and in every region in \texttt{regions}.
+
+\lispSyntax
+
+\texttt{(region-intersection \lispVar{region} \&rest \lispVar{regions})}
+
+\lispExamples
+
+\begin{lstlisting}
+(region-equal (region-intersection (make-rectangle* 0 0 4 4)
+                                   (make-rectangle* 2 2 6 6))
+              (make-rectangle* 2 2 4 4)) ; Returns T
+(region-equal +nowhere+ (region-intersection +nowhere+ +everywhere+)) ; Returns T
+\end{lstlisting}
+
+\lispGenericSubsection{region-difference}
+
+The \texttt{region-difference} generic returns the points of
+\texttt{region1} that do not lie in \texttt{region2}.
+
+\lispSyntax
+
+\texttt{(region-difference \lispVar{region1} \lispVar{region2})}
+
+\lispExamples
+
+\begin{lstlisting}
+(let ((rest (region-difference (make-rectangle* 0 0 4 2)
+                               (make-rectangle* 1 0 2 2))))
+  (list (region-set-p rest)
+        (region-contains-position-p rest 0.5 1)
+        (region-contains-position-p rest 1.5 1)
+        (region-contains-position-p rest 3 1)))
+  ; Returns (T T NIL T)
+(region-equal +nowhere+ (region-difference +everywhere+ +everywhere+)) ; Returns T
+\end{lstlisting}
+
+\lispGenericSubsection{bounding-rectangle*}
+
+The \texttt{bounding-rectangle*} generic returns the left, top, right,
+and bottom edges of the smallest axis-aligned rectangle that covers
+\texttt{region}, as four values.  It signals
+\texttt{BOUNDING-RECTANGLE-OF-NOWHERE} for the empty region and the
+whole plane.
+
+\lispSyntax
+
+\texttt{(bounding-rectangle* \lispVar{region})}
+
+\lispExamples
+
+\begin{lstlisting}
+(multiple-value-bind (left top right bottom)
+    (bounding-rectangle* (make-polygon* 0 1 3 4 1 2))
+  (list left top right bottom)) ; Returns (0 1 3 4)
+\end{lstlisting}
+
+\lispGenericSubsection{transform-region}
+
+The \texttt{transform-region} generic returns the image of
+\texttt{region} under \texttt{transformation}.  A rectangle stays a
+rectangle when the transformation is rectilinear, and becomes a convex
+polygon when it is not.
+
+\lispSyntax
+
+\texttt{(transform-region \lispVar{transformation} \lispVar{region})}
+
+\lispExamples
+
+\begin{lstlisting}
+(let ((shift (make-translation-transformation 10 0)))
+  (region-equal (transform-region shift (make-rectangle* 0 0 4 3))
+                (make-rectangle* 10 0 14 3))) ; Returns T
+(let* ((shear (make-transformation 1 0.5 0 1 0 0))
+       (image (transform-region shear (make-rectangle* 0 0 2 2))))
+  (list (polygonp image) (polygon-convex-p image))) ; Returns (T T)
+\end{lstlisting}
+
+\section{Types}
+
+\lispTypeSubsection{region}
+
+The \texttt{region} type is the abstract base of the geometry protocol.
+A region is a set of points in the plane.  The subclasses are
+\texttt{nowhere}, \texttt{everywhere}, \texttt{point},
+\texttt{rectangle}, \texttt{polygon}, and \texttt{region-set}.
+
+\lispTypeSubsection{nowhere}
+
+The \texttt{nowhere} type is the empty region.  It contains no
+positions.
+
+\lispTypeSubsection{everywhere}
+
+The \texttt{everywhere} type is the whole plane.
+
+\lispTypeSubsection{point}
+
+The \texttt{point} type is a single position in the plane, stored as two
+real coordinates in \texttt{standard-point}.
+
+\lispTypeSubsection{rectangle}
+
+The \texttt{rectangle} type is an axis-aligned rectangle.  Top is the
+smaller $y$ coordinate, and bottom is the larger one.  The boundary is
+inside the rectangle.
+
+\lispTypeSubsection{polygon}
+
+The \texttt{polygon} type is a filled polygon.  The boundary is inside.
+\texttt{standard-polygon} stores the vertices as a list of points and
+keeps a convexity mark.
+
+\lispTypeSubsection{region-set}
+
+The \texttt{region-set} type is a region made of member regions.  A
+position is inside the set when it is inside some member.
+\texttt{standard-region-set} stores the members as a list, in no
+particular order.
+
+\lispTypeSubsection{standard-region-difference}
+
+The \texttt{standard-region-difference} type is the region of points
+that lie in one region and not in another, stored as the minuend and the
+subtrahend.  A difference of rectangles that splits into rectangles is
+stored as those rectangles instead.
+
+\lispTypeSubsection{transformation}
+
+The \texttt{transformation} type is a mapping of positions to
+positions.  \texttt{standard-transformation} is the affine form:
+$x' = \texttt{mxx} \, x + \texttt{mxy} \, y + \texttt{tx}$ and
+$y' = \texttt{myx} \, x + \texttt{myy} \, y + \texttt{ty}$.
+
+\section{Conditions}
+
+\subsection{The \texttt{singular-transformation} Condition}
+
+The \texttt{singular-transformation} condition signals that a
+transformation has no inverse.  Its linear part collapses the plane onto
+a line or a point.
+
+\subsection{The \texttt{bounding-rectangle-of-nowhere} Condition}
+
+The \texttt{bounding-rectangle-of-nowhere} condition signals that a
+bounding rectangle was requested for the empty region or the whole
+plane, which have no edges.

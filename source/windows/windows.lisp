@@ -1712,8 +1712,8 @@ the first eight bytes, and each pointer takes eight."
     ((= message +wm-paint+)
      (let ((sheet (mirror-sheet hwnd)))
        (when (and (typep sheet 'push-button) (gadget-background sheet))
-         (paint-light hwnd sheet)))
-     (values t 0))
+         (paint-light hwnd sheet)
+         (values t 0))))
     ((= message +wm-size+)
      (let ((frame (mirror-frame hwnd)))
        (when frame
